@@ -149,6 +149,7 @@ window._itemEditOpen = window._itemEditOpen || {};
 window._scheduleOpen = window._scheduleOpen || {};
 window._taskRowEditOpen = window._taskRowEditOpen || {};
 window._addChecklistFormOpen = window._addChecklistFormOpen || {};
+window._addClItemFormOpen = window._addClItemFormOpen || {};
 window._clItemEditOpen = window._clItemEditOpen || {};
 window._clNoteOpenState = window._clNoteOpenState || {};
 
@@ -346,7 +347,7 @@ function normalize(record) {
   const checklists = Array.isArray(record.checklists) ? record.checklists.map(cl => ({
     id: cl.id || uid(), name: cl.name || "Untitled", expanded: cl.expanded !== false,
     items: Array.isArray(cl.items) ? cl.items.map(it => ({
-      id: it.id || uid(), name: it.name || "Untitled", note: it.note || "", done: !!it.done,
+      id: it.id || uid(), name: it.name || "Untitled", note: it.note || "", done: !!it.done, active: it.active !== false,
     })) : [],
   })) : [];
   return { people, lastResetWeekStart: record.lastResetWeekStart || mondayOfThisWeek(), categories, checklists };
@@ -455,7 +456,14 @@ function deleteChecklist(clId) {
   persist({ ...state, checklists: state.checklists.filter(cl => cl.id !== clId) });
 }
 function resetChecklist(clId) {
-  const checklists = state.checklists.map(cl => cl.id === clId ? { ...cl, items: cl.items.map(i => ({ ...i, done: false })) } : cl);
+  const checklists = state.checklists.map(cl => cl.id === clId ? { ...cl, items: cl.items.map(i => ({ ...i, done: false, active: true })) } : cl);
+  persist({ ...state, checklists });
+}
+function toggleChecklistItemActive(clId, itemId) {
+  const checklists = state.checklists.map(cl => {
+    if (cl.id !== clId) return cl;
+    return { ...cl, items: cl.items.map(i => i.id === itemId ? { ...i, active: !i.active } : i) };
+  });
   persist({ ...state, checklists });
 }
 function startEditChecklistName(clId) {
@@ -479,33 +487,51 @@ function deleteChecklistItem(clId, itemId) {
   const checklists = state.checklists.map(cl => cl.id === clId ? { ...cl, items: cl.items.filter(i => i.id !== itemId) } : cl);
   persist({ ...state, checklists });
 }
+function toggleAddChecklistItemForm(clId) {
+  window._addClItemFormOpen = window._addClItemFormOpen || {};
+  window._addClItemFormOpen[clId] = !window._addClItemFormOpen[clId];
+  render();
+}
 function addChecklistItem(clId) {
   const nameInput = document.getElementById("cl-item-name-" + clId);
   const noteInput = document.getElementById("cl-item-note-" + clId);
   const name = nameInput.value.trim();
   if (!name) { nameInput.focus(); return; }
   const note = noteInput ? noteInput.value : "";
-  const item = { id: uid(), name, note, done: false };
+  const item = { id: uid(), name, note, done: false, active: true };
   const checklists = state.checklists.map(cl => cl.id === clId ? { ...cl, items: [...cl.items, item] } : cl);
+  window._addClItemFormOpen[clId] = false;
   persist({ ...state, checklists });
 }
-function startEditChecklistItem(key) {
-  window._clItemEditOpen[key] = true; render();
+function startEditChecklistItem(clId, itemId) {
+  const key = clId + ":" + itemId;
+  const cl = state.checklists.find(c => c.id === clId);
+  const item = cl ? cl.items.find(i => i.id === itemId) : null;
+  window._clItemEditDraft = window._clItemEditDraft || {};
+  window._clItemEditDraft[key] = { name: item ? item.name : "", note: item ? item.note : "" };
+  window._clItemEditOpen[key] = true;
+  render();
   const inp = root.querySelector(`[data-cl-item-name-input="${key}"]`);
   if (inp) { inp.focus(); inp.select(); }
 }
-function stopEditChecklistItem(key) { window._clItemEditOpen[key] = false; render(); }
-function renameChecklistItem(clId, itemId, value) {
-  state = { ...state, checklists: state.checklists.map(cl => cl.id === clId ? { ...cl, items: cl.items.map(i => i.id === itemId ? { ...i, name: value } : i) } : cl) };
-  quietSave();
+function updateChecklistItemDraft(key, field, value) {
+  window._clItemEditDraft = window._clItemEditDraft || {};
+  window._clItemEditDraft[key] = window._clItemEditDraft[key] || { name: "", note: "" };
+  window._clItemEditDraft[key][field] = value;
 }
-function toggleChecklistItemNote(key) {
-  window._clNoteOpenState[key] = !window._clNoteOpenState[key];
+function saveChecklistItemEdit(clId, itemId) {
+  const key = clId + ":" + itemId;
+  const draft = (window._clItemEditDraft && window._clItemEditDraft[key]) || { name: "", note: "" };
+  const name = draft.name.trim();
+  if (!name) return;
+  const checklists = state.checklists.map(cl => cl.id === clId ? { ...cl, items: cl.items.map(i => i.id === itemId ? { ...i, name, note: draft.note } : i) } : cl);
+  window._clItemEditOpen[key] = false;
+  persist({ ...state, checklists });
+}
+function cancelChecklistItemEdit(key) {
+  window._clItemEditOpen[key] = false;
+  if (window._clItemEditDraft) delete window._clItemEditDraft[key];
   render();
-}
-function setChecklistItemNote(clId, itemId, value) {
-  state = { ...state, checklists: state.checklists.map(cl => cl.id === clId ? { ...cl, items: cl.items.map(i => i.id === itemId ? { ...i, note: value } : i) } : cl) };
-  quietSave();
 }
 function makeRecurring(catId, itemId) {
   setItemIntervalSimple(catId, itemId, "7");
@@ -946,43 +972,54 @@ function renderItemRow(cat, item) {
 
 function renderChecklistItemRow(cl, item) {
   const key = cl.id + ":" + item.id;
-  const isEditingName = window._clItemEditOpen[key];
-  const noteOpen = window._clNoteOpenState[key];
-  const nameHtml = isEditingName
-    ? `<input class="item-name-input" value="${escapeHtml(item.name)}" data-cl-item-name-input="${key}" style="flex:1;" />`
-    : `<span class="item-name" style="${item.done ? "text-decoration:line-through;color:var(--sage-soft);" : ""}">${escapeHtml(item.name)}</span>`;
-  let noteHtml = "";
-  if (noteOpen) {
-    noteHtml = `<div class="note-box"><textarea placeholder="Any extra detail…" data-cl-item-note="${key}">${escapeHtml(item.note)}</textarea></div>`;
-  } else if (item.note) {
-    noteHtml = `<div class="sub-info">${escapeHtml(item.note)}</div>`;
+  const isEditing = window._clItemEditOpen[key];
+
+  if (isEditing) {
+    const draft = (window._clItemEditDraft && window._clItemEditDraft[key]) || { name: item.name, note: item.note };
+    return `
+      <div class="cl-item-row" style="display:block;">
+        <div class="edit-panel-full">
+          <input type="text" class="item-name-input" value="${escapeHtml(draft.name)}" data-cl-item-name-input="${key}" placeholder="Item name" />
+          <textarea placeholder="Any extra detail…" data-cl-item-note-input="${key}" style="border:1px solid var(--sage-line);border-radius:8px;padding:8px 10px;font-size:13px;background:var(--sage-bg);font-family:inherit;color:var(--sage-text);min-height:44px;resize:vertical;">${escapeHtml(draft.note)}</textarea>
+          <div class="add-item-form-row">
+            <button data-save-cl-item="${key}">Save</button>
+            <button class="secondary-btn" data-cancel-cl-item="${key}" type="button">Cancel changes</button>
+          </div>
+        </div>
+      </div>
+    `;
   }
+
+  const noteHtml = item.note ? `<div class="sub-info">${escapeHtml(item.note)}</div>` : "";
   return `
-    <div class="cl-item-row">
+    <div class="cl-item-row" style="${!item.active ? "opacity:0.5;" : ""}">
       <div class="checkbox ${item.done ? "checked" : ""}" data-toggle-cl-item="${key}">
         <svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" /></svg>
       </div>
       <div class="cl-item-main">
         <div class="item-name-row">
-          ${nameHtml}
-          <button class="edit-pencil" data-edit-cl-item="${key}" aria-label="Rename">
+          <span class="item-name" style="${item.done ? "text-decoration:line-through;color:var(--sage-soft);" : ""}${!item.active ? "color:var(--sage-soft);" : ""}">${escapeHtml(item.name)}</span>
+          <button class="edit-pencil" data-edit-cl-item="${cl.id}:${item.id}" aria-label="Edit item">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </button>
-          <button class="note-toggle" data-toggle-cl-note="${key}">${item.note ? "Edit note" : "Add note"}</button>
         </div>
         ${noteHtml}
       </div>
+      <button class="note-toggle" data-toggle-cl-active="${key}" style="flex-shrink:0;">${item.active ? "Not needed this time" : "Include this time"}</button>
       <button class="delete-btn" data-delete-cl-item="${key}" aria-label="Delete">×</button>
     </div>
   `;
 }
 function renderChecklistCard(cl) {
-  const doneCount = cl.items.filter(i => i.done).length;
-  const itemsHtml = cl.items.length ? cl.items.map(it => renderChecklistItemRow(cl, it)).join("") : `<div class="empty">No items yet.</div>`;
+  const activeItems = cl.items.filter(i => i.active);
+  const doneCount = activeItems.filter(i => i.done).length;
+  const sortedItems = [...cl.items].sort((a, b) => (a.active === b.active) ? 0 : (a.active ? -1 : 1));
+  const itemsHtml = cl.items.length ? sortedItems.map(it => renderChecklistItemRow(cl, it)).join("") : `<div class="empty">No items yet.</div>`;
   const isEditingName = editingChecklistId === cl.id;
   const titleHtml = isEditingName
     ? `<input class="category-title-input" value="${escapeHtml(cl.name)}" data-checklist-name-input="${cl.id}" onclick="event.stopPropagation()" />`
     : `<div class="category-title">${escapeHtml(cl.name)}</div>`;
+  const addFormOpen = window._addClItemFormOpen && window._addClItemFormOpen[cl.id];
   return `
     <div class="category">
       <div class="category-head" data-toggle-checklist="${cl.id}">
@@ -991,17 +1028,24 @@ function renderChecklistCard(cl) {
         <button class="edit-pencil" data-edit-checklist="${cl.id}" aria-label="Rename checklist" onclick="event.stopPropagation()">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
-        <button class="cl-reset-btn" data-reset-checklist="${cl.id}">Reset (${doneCount}/${cl.items.length})</button>
+        <button class="cl-reset-btn" data-reset-checklist="${cl.id}">Reset (${doneCount}/${activeItems.length})</button>
         <button class="delete-btn" data-delete-checklist="${cl.id}" aria-label="Delete checklist">×</button>
       </div>
       ${cl.expanded ? `
         <div class="category-body">
           ${itemsHtml}
-          <div class="add-item-form">
-            <div class="add-item-form-row"><input type="text" id="cl-item-name-${cl.id}" placeholder="Add an item…" /></div>
-            <div class="add-item-form-row"><textarea id="cl-item-note-${cl.id}" placeholder="Any extra detail…" style="border:1px solid var(--sage-line);border-radius:8px;padding:8px 10px;font-size:13px;background:var(--sage-bg);font-family:inherit;color:var(--sage-text);min-height:40px;resize:vertical;width:100%;box-sizing:border-box;"></textarea></div>
-            <div class="add-item-form-row"><button data-add-cl-item="${cl.id}">Add item</button></div>
-          </div>
+          ${addFormOpen ? `
+            <div class="add-item-form">
+              <div class="add-item-form-row"><input type="text" id="cl-item-name-${cl.id}" placeholder="Add an item…" /></div>
+              <div class="add-item-form-row"><textarea id="cl-item-note-${cl.id}" placeholder="Any extra detail…" style="border:1px solid var(--sage-line);border-radius:8px;padding:8px 10px;font-size:13px;background:var(--sage-bg);font-family:inherit;color:var(--sage-text);min-height:40px;resize:vertical;width:100%;box-sizing:border-box;"></textarea></div>
+              <div class="add-item-form-row">
+                <button data-add-cl-item="${cl.id}">Add item</button>
+                <button class="secondary-btn" data-cancel-add-cl-item="${cl.id}" type="button">Cancel</button>
+              </div>
+            </div>
+          ` : `
+            <button class="add-task-toggle" data-open-add-cl-item="${cl.id}">+ Add item</button>
+          `}
         </div>
       ` : ""}
     </div>
@@ -1161,19 +1205,32 @@ function render(saveError) {
       const [clId, itemId] = el.dataset.deleteClItem.split(":");
       el.addEventListener("click", () => deleteChecklistItem(clId, itemId));
     });
-    root.querySelectorAll("[data-edit-cl-item]").forEach(el => el.addEventListener("click", () => startEditChecklistItem(el.dataset.editClItem)));
-    root.querySelectorAll("[data-cl-item-name-input]").forEach(el => {
-      const [clId, itemId] = el.dataset.clItemNameInput.split(":");
-      el.addEventListener("input", () => renameChecklistItem(clId, itemId, el.value));
-      el.addEventListener("keydown", (e) => { if (e.key === "Enter") stopEditChecklistItem(el.dataset.clItemNameInput); });
-      el.addEventListener("blur", () => stopEditChecklistItem(el.dataset.clItemNameInput));
+    root.querySelectorAll("[data-edit-cl-item]").forEach(el => {
+      const [clId, itemId] = el.dataset.editClItem.split(":");
+      el.addEventListener("click", () => startEditChecklistItem(clId, itemId));
     });
-    root.querySelectorAll("[data-toggle-cl-note]").forEach(el => el.addEventListener("click", () => toggleChecklistItemNote(el.dataset.toggleClNote)));
-    root.querySelectorAll("[data-cl-item-note]").forEach(el => {
-      const [clId, itemId] = el.dataset.clItemNote.split(":");
-      el.addEventListener("input", () => setChecklistItemNote(clId, itemId, el.value));
+    root.querySelectorAll("[data-cl-item-name-input]").forEach(el => {
+      const key = el.dataset.clItemNameInput;
+      el.addEventListener("input", () => updateChecklistItemDraft(key, "name", el.value));
+    });
+    root.querySelectorAll("[data-cl-item-note-input]").forEach(el => {
+      const key = el.dataset.clItemNoteInput;
+      el.addEventListener("input", () => updateChecklistItemDraft(key, "note", el.value));
+    });
+    root.querySelectorAll("[data-save-cl-item]").forEach(el => {
+      const [clId, itemId] = el.dataset.saveClItem.split(":");
+      el.addEventListener("click", () => saveChecklistItemEdit(clId, itemId));
+    });
+    root.querySelectorAll("[data-cancel-cl-item]").forEach(el => {
+      el.addEventListener("click", () => cancelChecklistItemEdit(el.dataset.cancelClItem));
     });
     root.querySelectorAll("[data-add-cl-item]").forEach(el => el.addEventListener("click", () => addChecklistItem(el.dataset.addClItem)));
+    root.querySelectorAll("[data-toggle-cl-active]").forEach(el => {
+      const [clId, itemId] = el.dataset.toggleClActive.split(":");
+      el.addEventListener("click", () => toggleChecklistItemActive(clId, itemId));
+    });
+    root.querySelectorAll("[data-open-add-cl-item]").forEach(el => el.addEventListener("click", () => toggleAddChecklistItemForm(el.dataset.openAddClItem)));
+    root.querySelectorAll("[data-cancel-add-cl-item]").forEach(el => el.addEventListener("click", () => toggleAddChecklistItemForm(el.dataset.cancelAddClItem)));
     return;
   }
 
@@ -1429,7 +1486,14 @@ function isComposingSomething() {
   if (window._taskRowEditOpen) {
     for (const k in window._taskRowEditOpen) if (window._taskRowEditOpen[k]) return true;
   }
-  if (editingPerson !== null || editingCategoryId !== null) return true;
+  if (window._clItemEditOpen) {
+    for (const k in window._clItemEditOpen) if (window._clItemEditOpen[k]) return true;
+  }
+  if (window._addChecklistFormOpen && window._addChecklistFormOpen.open) return true;
+  if (window._addClItemFormOpen) {
+    for (const k in window._addClItemFormOpen) if (window._addClItemFormOpen[k]) return true;
+  }
+  if (editingPerson !== null || editingCategoryId !== null || editingChecklistId !== null) return true;
   return false;
 }
 
