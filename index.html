@@ -91,6 +91,9 @@
   .add-item-form button { border: none; background: var(--sage); color: white; font-weight: 700; font-size: 13px; padding: 8px 14px; border-radius: 8px; cursor: pointer; }
   button.secondary-btn { background: none !important; color: var(--sage-soft) !important; border: 1px solid var(--sage-line) !important; }
   .add-task-toggle { width: 100%; margin-top: 10px; border: 1px dashed var(--sage-line); background: none; color: var(--sage); font-weight: 700; font-size: 13px; padding: 10px; border-radius: 8px; cursor: pointer; }
+  .type-toggle-row { display: flex; gap: 6px; }
+  .type-toggle-btn { flex: 1; border: 1.5px solid var(--sage-line); background: var(--sage-card); color: var(--sage-soft); font-weight: 700; font-size: 13px; padding: 9px; border-radius: 8px; cursor: pointer; }
+  .type-toggle-btn.active { background: var(--sage); border-color: var(--sage); color: white; }
   .custom-panel { display: flex; flex-direction: column; gap: 6px; padding: 8px; margin-top: 6px; background: var(--sage-bg); border-radius: 8px; border: 1px dashed var(--sage-line); width: 100%; }
   .custom-panel-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .custom-panel button.save-custom { border: none; background: var(--sage); color: white; font-weight: 700; font-size: 12px; padding: 5px 10px; border-radius: 8px; cursor: pointer; }
@@ -347,25 +350,22 @@ function toggleAddForm(catId) {
   window._addFormOpen = window._addFormOpen || {};
   window._addFormOpen[catId] = !window._addFormOpen[catId];
   window._addFormMode = window._addFormMode || {};
-  window._addFormMode[catId] = "choose";
+  window._addFormMode[catId] = "onetime";
   render();
 }
-function chooseRecurringMode(catId) {
+function captureAddFormDraft(catId) {
   const nameInput = document.getElementById("item-name-" + catId);
+  const noteInput = document.getElementById("item-note-" + catId);
   window._addFormDraftName = window._addFormDraftName || {};
-  window._addFormDraftName[catId] = nameInput ? nameInput.value : "";
-  window._addFormMode = window._addFormMode || {};
-  window._addFormMode[catId] = "recurring";
-  render();
+  window._addFormDraftNote = window._addFormDraftNote || {};
+  window._addFormDraftName[catId] = nameInput ? nameInput.value : (window._addFormDraftName[catId] || "");
+  window._addFormDraftNote[catId] = noteInput ? noteInput.value : (window._addFormDraftNote[catId] || "");
 }
-function chooseOneTimeQuick(catId) {
-  const nameInput = document.getElementById("item-name-" + catId);
-  const name = nameInput.value.trim();
-  if (!name) { nameInput.focus(); return; }
-  const item = { id: uid(), name, assignee: 0, dueDate: null, intervalDays: 0, customRule: null, anchorMode: "fixed", done: false, lastCompletedDate: null, note: "", isOccurrence: false };
-  const categories = state.categories.map(c => c.id === catId ? { ...c, items: [...c.items, item] } : c);
-  window._addFormOpen[catId] = false;
-  persist({ ...state, categories });
+function setAddFormMode(catId, mode) {
+  captureAddFormDraft(catId);
+  window._addFormMode = window._addFormMode || {};
+  window._addFormMode[catId] = mode;
+  render();
 }
 function toggleItem(catId, itemId) {
   const categories = state.categories.map(c => {
@@ -394,6 +394,13 @@ function cycleItemAssignee(catId, itemId) {
   const categories = state.categories.map(c => {
     if (c.id !== catId) return c;
     return { ...c, items: c.items.map(i => i.id === itemId ? { ...i, assignee: (i.assignee + 1) % NUM_OWNERS } : i) };
+  });
+  persist({ ...state, categories });
+}
+function setItemAssigneeSelect(catId, itemId, value) {
+  const categories = state.categories.map(c => {
+    if (c.id !== catId) return c;
+    return { ...c, items: c.items.map(i => i.id === itemId ? { ...i, assignee: Number(value) } : i) };
   });
   persist({ ...state, categories });
 }
@@ -592,42 +599,53 @@ function addCustomTypeChanged(catId, selectEl) {
 }
 function addItem(catId) {
   const nameInput = document.getElementById("item-name-" + catId);
-  const dateInput = document.getElementById("item-date-" + catId);
-  const intervalSelect = document.getElementById("item-interval-" + catId);
   const ownerSelect = document.getElementById("item-owner-" + catId);
-  const anchorSelect = document.getElementById("item-anchor-" + catId);
   const noteInput = document.getElementById("item-note-" + catId);
   const name = nameInput.value.trim();
-  if (!name) return;
+  if (!name) { nameInput.focus(); return; }
   const assignee = ownerSelect ? Number(ownerSelect.value) : 0;
-  const anchorMode = anchorSelect && anchorSelect.value === "floating" ? "floating" : "fixed";
   const note = noteInput ? noteInput.value : "";
-  let intervalDays = 0, customRule = null, dueDate = dateInput.value || null;
-  if (intervalSelect.value === "custom") {
-    const typeSelect = document.getElementById("add-custom-type-" + catId);
-    if (typeSelect.value === "days") {
-      const daysInput = document.getElementById("add-custom-days-" + catId);
-      intervalDays = Math.max(1, Number(daysInput.value) || 1);
-      dueDate = dueDate || todayStr();
-    } else if (typeSelect.value === "weeks") {
-      const weeksInput = document.getElementById("add-custom-weeks-" + catId);
-      intervalDays = Math.max(1, Number(weeksInput.value) || 1) * 7;
-      dueDate = dueDate || todayStr();
+  const mode = (window._addFormMode && window._addFormMode[catId]) || "onetime";
+
+  let intervalDays = 0, customRule = null, dueDate = null, anchorMode = "fixed";
+
+  if (mode === "recurring") {
+    const dateInput = document.getElementById("item-date-" + catId);
+    const intervalSelect = document.getElementById("item-interval-" + catId);
+    const anchorSelect = document.getElementById("item-anchor-" + catId);
+    anchorMode = anchorSelect && anchorSelect.value === "floating" ? "floating" : "fixed";
+    dueDate = dateInput.value || null;
+    if (intervalSelect.value === "custom") {
+      const typeSelect = document.getElementById("add-custom-type-" + catId);
+      if (typeSelect.value === "days") {
+        const daysInput = document.getElementById("add-custom-days-" + catId);
+        intervalDays = Math.max(1, Number(daysInput.value) || 1);
+        dueDate = dueDate || todayStr();
+      } else if (typeSelect.value === "weeks") {
+        const weeksInput = document.getElementById("add-custom-weeks-" + catId);
+        intervalDays = Math.max(1, Number(weeksInput.value) || 1) * 7;
+        dueDate = dueDate || todayStr();
+      } else {
+        const nthSel = document.getElementById("add-custom-nth-" + catId);
+        const wdSel = document.getElementById("add-custom-weekday-" + catId);
+        customRule = { nth: Number(nthSel.value), weekday: Number(wdSel.value) };
+        intervalDays = -1;
+        dueDate = nextCustomDate(customRule, todayStr());
+      }
     } else {
-      const nthSel = document.getElementById("add-custom-nth-" + catId);
-      const wdSel = document.getElementById("add-custom-weekday-" + catId);
-      customRule = { nth: Number(nthSel.value), weekday: Number(wdSel.value) };
-      intervalDays = -1;
-      dueDate = nextCustomDate(customRule, todayStr());
+      intervalDays = Number(intervalSelect.value);
+      if (intervalDays) dueDate = dueDate || todayStr();
     }
-  } else {
-    intervalDays = Number(intervalSelect.value);
-    if (intervalDays) dueDate = dueDate || todayStr();
   }
-  const item = { id: uid(), name, assignee, dueDate, intervalDays, customRule, anchorMode, done: false, note };
+
+  const item = { id: uid(), name, assignee, dueDate, intervalDays, customRule, anchorMode, done: false, lastCompletedDate: null, note, isOccurrence: false };
   const categories = state.categories.map(c => c.id === catId ? { ...c, items: [...c.items, item] } : c);
   window._addFormOpen = window._addFormOpen || {};
   window._addFormOpen[catId] = false;
+  window._addFormDraftName = window._addFormDraftName || {};
+  window._addFormDraftNote = window._addFormDraftNote || {};
+  window._addFormDraftName[catId] = "";
+  window._addFormDraftNote[catId] = "";
   persist({ ...state, categories });
 }
 
@@ -793,12 +811,9 @@ function renderItemRow(cat, item) {
   const intervalOptsHtml = INTERVAL_OPTIONS.filter(o => o.value !== "0").map(o =>
     `<option value="${o.value}" ${o.value === selectValue ? "selected" : ""}>${o.label}</option>`
   ).join("");
-  const recurringFieldsHtml = item.intervalDays ? `
-    <div class="item-meta">
-      <select class="item-interval-select" onchange="onIntervalChange('${cat.id}','${item.id}',this)">${intervalOptsHtml}</select>
-      ${item.intervalDays !== -1 ? `<input type="date" class="item-date-input" value="${item.dueDate || ""}" data-item-date="${cat.id}:${item.id}" />` : ""}
-      ${item.intervalDays === -1 ? `<span class="tag">${dateBitFor(item, pending)}</span>` : ""}
-    </div>
+  const isRecurring = !!item.intervalDays;
+  const ownerOptsHtmlEdit = state.people.map((p, i) => `<option value="${i}" ${item.assignee === i ? "selected" : ""}>${escapeHtml(p)}</option>`).join("") + `<option value="2" ${item.assignee === 2 ? "selected" : ""}>Both</option>`;
+  const recurringFieldsHtml = isRecurring ? `
     ${customOpen ? renderCustomPanel(cat.id, item.id, item) : ""}
     <div class="item-meta">
       <select class="item-interval-select" onchange="setItemAnchorMode('${cat.id}','${item.id}',this.value)">
@@ -806,21 +821,24 @@ function renderItemRow(cat, item) {
         <option value="floating" ${item.anchorMode === "floating" ? "selected" : ""}>Restart from check date</option>
       </select>
     </div>
-    <button class="secondary-btn" data-make-onetime="${cat.id}:${item.id}" type="button" style="align-self:flex-start;">Make one-time instead</button>
-  ` : `
-    <button class="secondary-btn" data-make-recurring="${cat.id}:${item.id}" type="button" style="align-self:flex-start;">Make this recurring…</button>
-  `;
+  ` : "";
   return `
     <div class="item-row">
       <div class="edit-panel-full">
         <input type="text" class="item-name-input" value="${escapeHtml(item.name)}" data-item-name-input="${key}" placeholder="Task name" />
-        <div class="item-meta">
-          ${assignBtn(item.assignee, `cycleItemAssignee('${cat.id}','${item.id}')`)}
+        <div class="type-toggle-row">
+          <button type="button" class="type-toggle-btn ${!isRecurring ? "active" : ""}" data-make-onetime="${cat.id}:${item.id}">One-time</button>
+          <button type="button" class="type-toggle-btn ${isRecurring ? "active" : ""}" data-make-recurring="${cat.id}:${item.id}">Recurring</button>
+        </div>
+        <div class="add-item-form-row">
+          <select data-item-owner-select="${cat.id}:${item.id}">${ownerOptsHtmlEdit}</select>
+          ${isRecurring ? `
+            <select class="item-interval-select" onchange="onIntervalChange('${cat.id}','${item.id}',this)">${intervalOptsHtml}</select>
+            ${item.intervalDays !== -1 ? `<input type="date" class="item-date-input" value="${item.dueDate || ""}" data-item-date="${cat.id}:${item.id}" />` : ""}
+          ` : ""}
         </div>
         ${recurringFieldsHtml}
-        <div class="note-box" style="border-top:none;padding-top:0;margin-top:4px;">
-          <textarea placeholder="Any extra detail…" data-item-note="${key}">${escapeHtml(item.note)}</textarea>
-        </div>
+        <textarea placeholder="Any extra detail…" data-item-note="${key}" style="border:1px solid var(--sage-line);border-radius:8px;padding:8px 10px;font-size:13px;background:var(--sage-bg);font-family:inherit;color:var(--sage-text);min-height:44px;resize:vertical;">${escapeHtml(item.note)}</textarea>
         <div class="add-item-form-row">
           <button data-close-edit-item="${key}">Done</button>
           <button class="secondary-btn" data-delete-item="${cat.id}:${item.id}" type="button">Delete task</button>
@@ -857,64 +875,65 @@ function renderCategory(c) {
       ${c.expanded ? `
         <div class="category-body">
           ${itemsHtml}
-          ${(window._addFormOpen && window._addFormOpen[c.id]) ? (
-            (window._addFormMode && window._addFormMode[c.id] === "recurring") ? `
+          ${(window._addFormOpen && window._addFormOpen[c.id]) ? (() => {
+            const mode = (window._addFormMode && window._addFormMode[c.id]) || "onetime";
+            const draftName = (window._addFormDraftName && window._addFormDraftName[c.id]) || "";
+            const draftNote = (window._addFormDraftNote && window._addFormDraftNote[c.id]) || "";
+            return `
             <div class="add-item-form">
-              <div class="add-item-form-row"><input type="text" id="item-name-${c.id}" placeholder="Task name…" value="${escapeHtml((window._addFormDraftName && window._addFormDraftName[c.id]) || "")}" /></div>
+              <div class="add-item-form-row"><input type="text" id="item-name-${c.id}" placeholder="Task name…" value="${escapeHtml(draftName)}" /></div>
+              <div class="type-toggle-row">
+                <button type="button" class="type-toggle-btn ${mode === "onetime" ? "active" : ""}" data-set-add-mode="${c.id}:onetime">One-time</button>
+                <button type="button" class="type-toggle-btn ${mode === "recurring" ? "active" : ""}" data-set-add-mode="${c.id}:recurring">Recurring</button>
+              </div>
               <div class="add-item-form-row">
                 <select id="item-owner-${c.id}">${ownerOptsHtml}</select>
-                <select class="item-interval-select" id="item-interval-${c.id}" onchange="addItemIntervalChanged('${c.id}',this)">${INTERVAL_OPTIONS.filter(o => o.value !== "0").map(o => `<option value="${o.value}">${o.label}</option>`).join("")}</select>
-                <input type="date" id="item-date-${c.id}" />
+                ${mode === "recurring" ? `
+                  <select class="item-interval-select" id="item-interval-${c.id}" onchange="addItemIntervalChanged('${c.id}',this)">${INTERVAL_OPTIONS.filter(o => o.value !== "0").map(o => `<option value="${o.value}">${o.label}</option>`).join("")}</select>
+                  <input type="date" id="item-date-${c.id}" />
+                ` : ""}
               </div>
-              <div class="custom-panel" id="add-custom-block-${c.id}" style="display:none">
-                <div class="custom-panel-row">
-                  <select class="custom-input" id="add-custom-type-${c.id}" onchange="addCustomTypeChanged('${c.id}',this)">
-                    <option value="days">Every N days</option>
-                    <option value="weeks" selected>Every N weeks</option>
-                    <option value="monthly">Specific day each month</option>
+              ${mode === "recurring" ? `
+                <div class="custom-panel" id="add-custom-block-${c.id}" style="display:none">
+                  <div class="custom-panel-row">
+                    <select class="custom-input" id="add-custom-type-${c.id}" onchange="addCustomTypeChanged('${c.id}',this)">
+                      <option value="days">Every N days</option>
+                      <option value="weeks" selected>Every N weeks</option>
+                      <option value="monthly">Specific day each month</option>
+                    </select>
+                  </div>
+                  <div class="custom-panel-row" id="add-custom-days-row-${c.id}" style="display:none">
+                    <span style="font-size:12px;color:var(--sage-soft)">Every</span>
+                    <input type="number" min="1" class="custom-input" id="add-custom-days-${c.id}" value="10" style="width:50px" />
+                    <span style="font-size:12px;color:var(--sage-soft)">days</span>
+                  </div>
+                  <div class="custom-panel-row" id="add-custom-weeks-row-${c.id}" style="display:flex">
+                    <span style="font-size:12px;color:var(--sage-soft)">Every</span>
+                    <input type="number" min="1" class="custom-input" id="add-custom-weeks-${c.id}" value="3" style="width:50px" />
+                    <span style="font-size:12px;color:var(--sage-soft)">weeks</span>
+                  </div>
+                  <div class="custom-panel-row" id="add-custom-monthly-row-${c.id}" style="display:none">
+                    <select class="custom-input" id="add-custom-nth-${c.id}">${nthOptsHtml}</select>
+                    <select class="custom-input" id="add-custom-weekday-${c.id}">${wdOptsHtml}</select>
+                    <span style="font-size:12px;color:var(--sage-soft)">of the month</span>
+                  </div>
+                </div>
+                <div class="add-item-form-row" id="add-anchor-row-${c.id}" style="display:flex">
+                  <span style="font-size:12px;color:var(--sage-soft)">If done early or late:</span>
+                  <select id="item-anchor-${c.id}">
+                    <option value="fixed" selected>Keep original schedule</option>
+                    <option value="floating">Restart count from when checked</option>
                   </select>
                 </div>
-                <div class="custom-panel-row" id="add-custom-days-row-${c.id}" style="display:none">
-                  <span style="font-size:12px;color:var(--sage-soft)">Every</span>
-                  <input type="number" min="1" class="custom-input" id="add-custom-days-${c.id}" value="10" style="width:50px" />
-                  <span style="font-size:12px;color:var(--sage-soft)">days</span>
-                </div>
-                <div class="custom-panel-row" id="add-custom-weeks-row-${c.id}" style="display:flex">
-                  <span style="font-size:12px;color:var(--sage-soft)">Every</span>
-                  <input type="number" min="1" class="custom-input" id="add-custom-weeks-${c.id}" value="3" style="width:50px" />
-                  <span style="font-size:12px;color:var(--sage-soft)">weeks</span>
-                </div>
-                <div class="custom-panel-row" id="add-custom-monthly-row-${c.id}" style="display:none">
-                  <select class="custom-input" id="add-custom-nth-${c.id}">${nthOptsHtml}</select>
-                  <select class="custom-input" id="add-custom-weekday-${c.id}">${wdOptsHtml}</select>
-                  <span style="font-size:12px;color:var(--sage-soft)">of the month</span>
-                </div>
-              </div>
-              <div class="add-item-form-row" id="add-anchor-row-${c.id}" style="display:flex">
-                <span style="font-size:12px;color:var(--sage-soft)">If done early or late:</span>
-                <select id="item-anchor-${c.id}">
-                  <option value="fixed" selected>Keep original schedule</option>
-                  <option value="floating">Restart count from when checked</option>
-                </select>
-              </div>
-              <textarea id="item-note-${c.id}" placeholder="Any extra detail…" style="border:1px solid var(--sage-line);border-radius:8px;padding:8px 10px;font-size:13px;background:var(--sage-bg);font-family:inherit;color:var(--sage-text);min-height:44px;resize:vertical;"></textarea>
+              ` : ""}
+              <textarea id="item-note-${c.id}" placeholder="Any extra detail…" style="border:1px solid var(--sage-line);border-radius:8px;padding:8px 10px;font-size:13px;background:var(--sage-bg);font-family:inherit;color:var(--sage-text);min-height:44px;resize:vertical;">${escapeHtml(draftNote)}</textarea>
               <div class="add-item-form-row">
-                <button data-add-item="${c.id}">Add recurring task</button>
+                <button data-add-item="${c.id}">${mode === "recurring" ? "Add recurring task" : "Add task"}</button>
                 <button class="secondary-btn" data-cancel-add="${c.id}" type="button">Cancel</button>
               </div>
             </div>
-            ` : `
-            <div class="add-item-form">
-              <div class="add-item-form-row"><input type="text" id="item-name-${c.id}" placeholder="Task name…" /></div>
-              <div class="add-item-form-row" style="font-size:12px;color:var(--sage-soft);">Is this a recurring task, or one-time?</div>
-              <div class="add-item-form-row">
-                <button data-choose-onetime="${c.id}" type="button">One-time</button>
-                <button data-choose-recurring="${c.id}" type="button">Recurring</button>
-                <button class="secondary-btn" data-cancel-add="${c.id}" type="button">Cancel</button>
-              </div>
-            </div>
-            `
-          ) : `
+            `;
+          })() : `
             <button class="add-task-toggle" data-open-add="${c.id}">+ Add task</button>
           `}
         </div>
@@ -1070,6 +1089,10 @@ function render(saveError) {
     const [catId, itemId] = el.dataset.makeOnetime.split(":");
     el.addEventListener("click", () => makeOneTime(catId, itemId));
   });
+  root.querySelectorAll("[data-item-owner-select]").forEach(el => {
+    const [catId, itemId] = el.dataset.itemOwnerSelect.split(":");
+    el.addEventListener("change", () => setItemAssigneeSelect(catId, itemId, el.value));
+  });
   root.querySelectorAll("[data-item-name-input]").forEach(el => {
     const [catId, itemId] = el.dataset.itemNameInput.split(":");
     el.addEventListener("input", () => renameItem(catId, itemId, el.value));
@@ -1089,8 +1112,10 @@ function render(saveError) {
   root.querySelectorAll("[data-add-item]").forEach(el => el.addEventListener("click", () => addItem(el.dataset.addItem)));
   root.querySelectorAll("[data-open-add]").forEach(el => el.addEventListener("click", () => toggleAddForm(el.dataset.openAdd)));
   root.querySelectorAll("[data-cancel-add]").forEach(el => el.addEventListener("click", () => toggleAddForm(el.dataset.cancelAdd)));
-  root.querySelectorAll("[data-choose-onetime]").forEach(el => el.addEventListener("click", () => chooseOneTimeQuick(el.dataset.chooseOnetime)));
-  root.querySelectorAll("[data-choose-recurring]").forEach(el => el.addEventListener("click", () => chooseRecurringMode(el.dataset.chooseRecurring)));
+  root.querySelectorAll("[data-set-add-mode]").forEach(el => {
+    const [catId, mode] = el.dataset.setAddMode.split(":");
+    el.addEventListener("click", () => setAddFormMode(catId, mode));
+  });
 }
 
 function applyAutoWeeklyReset(s) {
