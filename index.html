@@ -1,0 +1,1180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Household Checklist</title>
+<style>
+  :root {
+    --sage: #5B7553; --sage-dark: #3E5238; --sage-bg: #F3F5EF; --sage-card: #FFFFFF;
+    --sage-line: #E2E6DA; --sage-text: #2B331F; --sage-soft: #6B7660;
+    --okra: #B98B4E; --okra-bg: #F7EFE1; --sage-badge-bg: #EEF1E9;
+    --overdue: #A15C3A; --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--sage-bg); color: var(--sage-text); }
+  #app-root { min-height: 100vh; padding: 0 0 40px 0; max-width: 480px; margin: 0 auto; }
+  .header { padding: 24px 20px 16px 20px; text-align: center; }
+  .eyebrow { font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--sage); font-weight: 700; }
+  .today-date { font-size: 15px; color: var(--sage-text); font-weight: 600; margin-top: 3px; }
+  .eyebrow .range { color: var(--sage-soft); font-weight: 400; text-transform: none; letter-spacing: 0; }
+  .title { font-size: 24px; font-weight: 800; letter-spacing: -0.01em; margin: 6px 0 16px 0; }
+  .people-row { display: flex; gap: 8px; padding: 0 20px; }
+  .person-chip {
+    flex: 1; background: var(--sage-card); border: 1.5px solid var(--sage-line); border-radius: 999px;
+    padding: 9px 10px 9px 12px; font-size: 13px; font-weight: 600; text-align: center; color: var(--sage-soft);
+    display: flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer;
+  }
+  .person-chip.active { border-color: var(--chip-color); background: var(--chip-bg); color: var(--chip-color); font-weight: 700; }
+  .person-chip span.name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .person-chip input {
+    border: none; background: transparent; font: inherit; color: inherit; text-align: center; width: 100%; outline: none; flex: 1; min-width: 0;
+  }
+  .edit-pencil { border: none; background: none; padding: 2px; cursor: pointer; color: inherit; opacity: 0.6; display: flex; flex-shrink: 0; }
+  .edit-pencil:hover { opacity: 1; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .filter-note { font-size: 12px; color: var(--sage-soft); text-align: center; padding: 8px 20px 0 20px; }
+  .section-head { display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 20px 20px 6px 20px; }
+  .section-label { font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 700; color: var(--sage-soft); }
+  .section-chevron { transition: transform 0.15s ease; color: var(--sage-soft); }
+  .section-chevron.open { transform: rotate(180deg); }
+  .list { padding: 4px 16px; display: flex; flex-direction: column; gap: 8px; }
+  .task { background: var(--sage-card); border: 1px solid var(--sage-line); border-radius: var(--radius); padding: 11px 12px; display: flex; align-items: center; gap: 12px; }
+  .checkbox { width: 24px; height: 24px; border-radius: 8px; border: 2px solid var(--sage-line); flex-shrink: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; background: var(--sage-bg); }
+  .checkbox.checked { background: var(--sage); border-color: var(--sage); }
+  .checkbox svg { width: 14px; height: 14px; opacity: 0; transform: scale(0.6); }
+  .checkbox.checked svg { opacity: 1; transform: scale(1); }
+  .task-main { flex: 1; min-width: 0; }
+  .task-text { font-size: 14px; font-weight: 600; }
+  .task.done .task-text { text-decoration: line-through; color: var(--sage-soft); }
+  .task-meta { display: flex; align-items: center; gap: 6px; margin-top: 4px; flex-wrap: wrap; font-size: 11px; color: var(--sage-soft); }
+  .sub-info { font-size: 11px; color: var(--sage-soft); margin-top: 4px; font-family: inherit; }
+  .task-date-col { margin-left: auto; padding-left: 10px; text-align: right; font-size: 11px; color: var(--sage-soft); white-space: nowrap; flex-shrink: 0; align-self: center; }
+  .tag { background: var(--sage-bg); padding: 2px 8px; border-radius: 999px; }
+  .owner-pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-weight: 600; border: none; font-family: inherit; font-size: 11px; cursor: pointer; }
+  .overdue { color: var(--overdue); }
+  .empty { text-align: center; padding: 20px; color: var(--sage-soft); font-size: 14px; }
+  .add-row { display: flex; gap: 8px; padding: 12px 16px 4px 16px; }
+  .add-row input { flex: 1; border: 1px solid var(--sage-line); border-radius: var(--radius); padding: 12px 14px; font-size: 14px; background: var(--sage-card); outline: none; }
+  .add-row button { border: none; background: var(--sage); color: white; font-weight: 700; font-size: 14px; padding: 0 18px; border-radius: var(--radius); cursor: pointer; }
+  .category { background: var(--sage-card); border: 1px solid var(--sage-line); border-radius: var(--radius); overflow: hidden; }
+  .category-head { padding: 12px; display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .chevron { transition: transform 0.15s ease; color: var(--sage-soft); flex-shrink: 0; }
+  .chevron.open { transform: rotate(90deg); }
+  .category-title { font-size: 15px; font-weight: 700; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .category-title-input { font-size: 15px; font-weight: 700; flex: 1; min-width: 0; border: 1px solid var(--sage-line); border-radius: 6px; padding: 2px 6px; font-family: inherit; background: var(--sage-bg); color: var(--sage-text); }
+  .category-sub { font-size: 12px; color: var(--sage-soft); flex-shrink: 0; }
+  .category-body { border-top: 1px solid var(--sage-line); padding: 8px 12px 12px 12px; }
+  .item-row { padding: 9px 0; border-bottom: 1px solid var(--sage-line); }
+  .item-row:last-of-type { border-bottom: none; }
+  .item-top { display: flex; align-items: center; gap: 10px; }
+  .item-main { flex: 1; min-width: 0; }
+  .item-name-row { display: flex; align-items: center; gap: 4px; }
+  .edit-btn { border: 1px solid var(--sage-line); background: var(--sage-bg); color: var(--sage-soft); font-size: 11px; font-weight: 700; padding: 5px 10px; border-radius: 8px; cursor: pointer; flex-shrink: 0; }
+  .edit-panel-full { display: flex; flex-direction: column; gap: 8px; padding: 4px 0; }
+  .edit-panel-full .item-name-input { width: 100%; padding: 8px 10px; font-size: 14px; }
+  .item-name { font-size: 14px; font-weight: 600; }
+  .item-name-input { font-size: 14px; font-weight: 600; border: 1px solid var(--sage-line); border-radius: 6px; padding: 2px 6px; font-family: inherit; background: var(--sage-bg); color: var(--sage-text); flex: 1; min-width: 0; }
+  .item-meta { display: flex; align-items: center; gap: 6px; margin-top: 5px; flex-wrap: wrap; }
+  .item-date-input, .item-interval-select, .custom-input {
+    border: 1px solid var(--sage-line); border-radius: 8px; font-size: 11px; padding: 3px 6px; background: var(--sage-bg); color: var(--sage-soft); font-family: inherit;
+  }
+  .note-toggle { border: none; background: none; color: var(--sage-soft); font-size: 11px; cursor: pointer; text-decoration: underline; padding: 0; font-family: inherit; }
+  .note-box { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--sage-line); }
+  .note-box textarea { width: 100%; border: 1px solid var(--sage-line); border-radius: 8px; padding: 8px; font-size: 12px; font-family: inherit; background: var(--sage-bg); color: var(--sage-text); resize: vertical; min-height: 44px; }
+  .note-preview { margin-top: 6px; font-size: 12px; color: var(--sage-soft); }
+  .delete-btn { border: none; background: none; color: var(--sage-soft); font-size: 18px; line-height: 1; cursor: pointer; padding: 6px; flex-shrink: 0; }
+  .add-item-form { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--sage-line); display: flex; flex-direction: column; gap: 6px; }
+  .add-item-form-row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .add-item-form input, .add-item-form select { border: 1px solid var(--sage-line); border-radius: 8px; padding: 8px 10px; font-size: 13px; background: var(--sage-bg); font-family: inherit; color: var(--sage-text); }
+  .add-item-form input[type="text"] { flex: 1; min-width: 120px; }
+  .add-item-form button { border: none; background: var(--sage); color: white; font-weight: 700; font-size: 13px; padding: 8px 14px; border-radius: 8px; cursor: pointer; }
+  button.secondary-btn { background: none !important; color: var(--sage-soft) !important; border: 1px solid var(--sage-line) !important; }
+  .add-task-toggle { width: 100%; margin-top: 10px; border: 1px dashed var(--sage-line); background: none; color: var(--sage); font-weight: 700; font-size: 13px; padding: 10px; border-radius: 8px; cursor: pointer; }
+  .custom-panel { display: flex; flex-direction: column; gap: 6px; padding: 8px; margin-top: 6px; background: var(--sage-bg); border-radius: 8px; border: 1px dashed var(--sage-line); width: 100%; }
+  .custom-panel-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .custom-panel button.save-custom { border: none; background: var(--sage); color: white; font-weight: 700; font-size: 12px; padding: 5px 10px; border-radius: 8px; cursor: pointer; }
+  .footer-row { padding: 20px 16px 0 16px; display: flex; justify-content: center; }
+  .status { text-align: center; font-size: 12px; color: var(--sage-soft); padding: 14px 16px 0 16px; }
+</style>
+</head>
+<body>
+<div id="app-root"><div class="status">Loading your checklist…</div></div>
+
+<script>
+const BIN_ID = "6a4cb8fdda38895dfe398ef7";
+const MASTER_KEY = "$2a$10$JKNqBvlgG6PnN2vkia8.NuDtrPgACYy2zU.A33QrPD/xGX4sDYPZ.";
+const BIN_URL = "https://api.jsonbin.io/v3/b/" + BIN_ID;
+const OWNER_COLORS = [
+  { color: "#5B7553", bg: "#EEF1E9" },
+  { color: "#B98B4E", bg: "#F7EFE1" },
+  { color: "#6B6F63", bg: "#EDEEE8" },
+];
+const NUM_OWNERS = 3;
+const INTERVAL_OPTIONS = [
+  { value: "0", label: "One-time" },
+  { value: "7", label: "Weekly" },
+  { value: "14", label: "Every 2 weeks" },
+  { value: "30", label: "Monthly" },
+  { value: "custom", label: "Custom…" },
+];
+const WEEKDAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+const NTH_OPTIONS = [{v:1,l:"1st"},{v:2,l:"2nd"},{v:3,l:"3rd"},{v:4,l:"4th"},{v:-1,l:"Last"}];
+
+let state = null;
+let saving = false;
+let activeFilter = null;
+let tasksOpen = true;
+let completedOpen = true;
+let categoriesOpen = true;
+let editingPerson = null;
+let editingCategoryId = null;
+let root = document.getElementById("app-root");
+window._noteOpenState = window._noteOpenState || {};
+window._customPanelState = window._customPanelState || {};
+window._itemEditOpen = window._itemEditOpen || {};
+window._scheduleOpen = window._scheduleOpen || {};
+window._taskRowEditOpen = window._taskRowEditOpen || {};
+
+function uid() { return "id" + Math.random().toString(36).slice(2, 9); }
+function pad2(n) { return String(n).padStart(2, "0"); }
+function fmtLocal(d) { return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate()); }
+function todayStr() { return fmtLocal(new Date()); }
+function addDays(dateStr, days) {
+  const d = dateStr ? new Date(dateStr + "T00:00:00") : new Date();
+  d.setDate(d.getDate() + Number(days));
+  return fmtLocal(d);
+}
+function mondayOfThisWeek() {
+  const today = new Date();
+  const day = today.getDay();
+  const diff = (day === 0 ? -6 : 1 - day);
+  const monday = new Date(today);
+  monday.setDate(today.getDate() + diff);
+  return fmtLocal(monday);
+}
+function weekRangeLabel() {
+  const monday = mondayOfThisWeek();
+  const sunday = addDays(monday, 6);
+  const fmt = s => new Date(s + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return fmt(monday) + " – " + fmt(sunday);
+}
+function todayLabel() {
+  return new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+}
+function niceDate(s) {
+  if (!s) return "";
+  return new Date(s + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function nthWeekdayOfMonth(year, monthIndex, weekdayTarget, nth) {
+  if (nth === -1) {
+    const lastDay = new Date(year, monthIndex + 1, 0);
+    let d = lastDay.getDate();
+    while (new Date(year, monthIndex, d).getDay() !== weekdayTarget) d--;
+    return new Date(year, monthIndex, d);
+  }
+  const firstDay = new Date(year, monthIndex, 1);
+  const firstWeekday = firstDay.getDay();
+  const offset = (weekdayTarget - firstWeekday + 7) % 7;
+  const day = 1 + offset + (nth - 1) * 7;
+  return new Date(year, monthIndex, day);
+}
+function nextCustomDate(rule, afterDateStr) {
+  const after = afterDateStr ? new Date(afterDateStr + "T00:00:00") : new Date();
+  let year = after.getFullYear(), month = after.getMonth();
+  let occ = nthWeekdayOfMonth(year, month, rule.weekday, rule.nth);
+  if (occ <= after) {
+    month += 1; if (month > 11) { month = 0; year += 1; }
+    occ = nthWeekdayOfMonth(year, month, rule.weekday, rule.nth);
+  }
+  return fmtLocal(occ);
+}
+function prevCustomDate(rule, beforeDateStr) {
+  const before = new Date(beforeDateStr + "T00:00:00");
+  let year = before.getFullYear(), month = before.getMonth();
+  let occ = nthWeekdayOfMonth(year, month, rule.weekday, rule.nth);
+  if (occ >= before) {
+    month -= 1; if (month < 0) { month = 11; year -= 1; }
+    occ = nthWeekdayOfMonth(year, month, rule.weekday, rule.nth);
+  }
+  return fmtLocal(occ);
+}
+function customLabel(rule) {
+  if (!rule) return "Custom";
+  const nthLabel = (NTH_OPTIONS.find(o => o.v === rule.nth) || {}).l || "";
+  return `${nthLabel} ${WEEKDAY_NAMES[rule.weekday]} of month`;
+}
+
+function isPending(item) {
+  return !item.done;
+}
+function matchesFilter(item) {
+  if (activeFilter === null) return true;
+  if (activeFilter === 2) return item.assignee === 2;
+  return item.assignee === activeFilter || item.assignee === 2;
+}
+function mondayStr() { return mondayOfThisWeek(); }
+function sundayOfThisWeek() { return addDays(mondayOfThisWeek(), 6); }
+function isWeekRelevant(item) {
+  const monday = mondayStr();
+  const sunday = sundayOfThisWeek();
+  if (!item.done) return !!item.dueDate && item.dueDate <= sunday;
+  return !!item.lastCompletedDate && item.lastCompletedDate >= monday && item.lastCompletedDate <= sunday;
+}
+function sortPendingFirst(items) {
+  return [...items].sort((a, b) => (isPending(a) ? 0 : 1) - (isPending(b) ? 0 : 1));
+}
+function sortByDueDate(items) {
+  return [...items].sort((a, b) => {
+    const da = a.dueDate || "9999-12-31";
+    const db = b.dueDate || "9999-12-31";
+    return da < db ? -1 : da > db ? 1 : 0;
+  });
+}
+
+function defaultState() {
+  return {
+    people: ["You", "Partner"],
+    lastResetWeekStart: mondayOfThisWeek(),
+    categories: [
+      { id: uid(), name: "Watering", expanded: true, items: [
+        { id: uid(), name: "Indoor plants", assignee: 0, intervalDays: 7, dueDate: addDays(todayStr(), 1), note: "" },
+      ]},
+      { id: uid(), name: "Garbage", expanded: false, items: [
+        { id: uid(), name: "Organic", assignee: 0, intervalDays: 14, dueDate: addDays(todayStr(), 3), note: "" },
+        { id: uid(), name: "Paper", assignee: 1, intervalDays: 30, dueDate: addDays(todayStr(), 10), note: "" },
+        { id: uid(), name: "Glass", assignee: 0, intervalDays: 30, dueDate: addDays(todayStr(), 20), note: "" },
+        { id: uid(), name: "Bulky", assignee: 1, intervalDays: 0, dueDate: null, done: false, note: "" },
+      ]},
+      { id: uid(), name: "General", expanded: false, items: [] },
+    ],
+  };
+}
+
+async function loadRemote() {
+  const res = await fetch(BIN_URL + "/latest", { headers: { "X-Master-Key": MASTER_KEY } });
+  if (!res.ok) throw new Error("load failed");
+  const json = await res.json();
+  return json.record;
+}
+async function saveRemote(data) {
+  const res = await fetch(BIN_URL, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", "X-Master-Key": MASTER_KEY },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error("save failed");
+}
+let lastKnownTotalCategories = 0;
+function countCategories(s) { return s && Array.isArray(s.categories) ? s.categories.length : 0; }
+function persist(next) {
+  const prevCatCount = lastKnownTotalCategories;
+  const nextCatCount = countCategories(next);
+  if (prevCatCount >= 3 && nextCatCount <= 1) {
+    const ok = confirm(
+      `This change would reduce your checklist from ${prevCatCount} categories down to ${nextCatCount}. ` +
+      `This looks like it could be accidental data loss. Continue anyway?`
+    );
+    if (!ok) { render(); return; }
+  }
+  state = next;
+  lastKnownTotalCategories = nextCatCount;
+  render();
+  saving = true;
+  saveRemote(next).then(() => { saving = false; render(); }).catch(() => { saving = false; render(true); });
+}
+function quietSave() {
+  clearTimeout(quietSave._t);
+  quietSave._t = setTimeout(() => saveRemote(state).catch(() => {}), 400);
+}
+
+function normalizeItem(raw) {
+  return {
+    id: raw.id || uid(),
+    name: raw.name || raw.text || "Untitled",
+    assignee: typeof raw.assignee === "number" ? raw.assignee : 0,
+    intervalDays: typeof raw.intervalDays === "number" ? raw.intervalDays : 0,
+    customRule: raw.customRule || null,
+    anchorMode: raw.anchorMode === "floating" ? "floating" : "fixed",
+    dueDate: raw.dueDate || null,
+    done: !!raw.done,
+    lastCompletedDate: raw.lastCompletedDate || null,
+    note: raw.note || "",
+    isOccurrence: !!raw.isOccurrence,
+  };
+}
+function normalize(record) {
+  const base = defaultState();
+  if (!record) return base;
+  const people = Array.isArray(record.people) && record.people.length ? record.people : base.people;
+  let categories = [];
+  if (Array.isArray(record.categories)) {
+    categories = record.categories.map(c => ({
+      id: c.id || uid(), name: c.name || "Untitled", expanded: !!c.expanded,
+      items: Array.isArray(c.items) ? c.items.map(normalizeItem) : [],
+    }));
+  } else if (Array.isArray(record.entries)) {
+    const generalItems = record.entries.filter(e => e.kind === "task").map(e => normalizeItem({ ...e, intervalDays: 0 }));
+    const catEntries = record.entries.filter(e => e.kind === "category").map(c => ({
+      id: c.id || uid(), name: c.name, expanded: !!c.expanded, items: (c.items || []).map(normalizeItem),
+    }));
+    categories = [...catEntries];
+    if (generalItems.length) categories.push({ id: uid(), name: "General", expanded: false, items: generalItems });
+  } else if (Array.isArray(record.tasks)) {
+    categories = [{ id: uid(), name: "General", expanded: true, items: record.tasks.map(normalizeItem) }];
+  } else {
+    categories = base.categories;
+  }
+  return { people, lastResetWeekStart: record.lastResetWeekStart || mondayOfThisWeek(), categories };
+}
+
+function allItemsFlat() {
+  const out = [];
+  state.categories.forEach(c => c.items.forEach(it => out.push({ ...it, categoryId: c.id, categoryName: c.name })));
+  return out;
+}
+
+function toggleFilter(i) { activeFilter = activeFilter === i ? null : i; render(); }
+function toggleTasksOpen() { tasksOpen = !tasksOpen; render(); }
+function toggleCompletedOpen() { completedOpen = !completedOpen; render(); }
+function toggleCategoriesOpen() { categoriesOpen = !categoriesOpen; render(); }
+function toggleCategoryExpanded(catId) {
+  const categories = state.categories.map(c => c.id === catId ? { ...c, expanded: !c.expanded } : c);
+  persist({ ...state, categories });
+}
+function toggleAddForm(catId) {
+  window._addFormOpen = window._addFormOpen || {};
+  window._addFormOpen[catId] = !window._addFormOpen[catId];
+  window._addFormMode = window._addFormMode || {};
+  window._addFormMode[catId] = "choose";
+  render();
+}
+function chooseRecurringMode(catId) {
+  const nameInput = document.getElementById("item-name-" + catId);
+  window._addFormDraftName = window._addFormDraftName || {};
+  window._addFormDraftName[catId] = nameInput ? nameInput.value : "";
+  window._addFormMode = window._addFormMode || {};
+  window._addFormMode[catId] = "recurring";
+  render();
+}
+function chooseOneTimeQuick(catId) {
+  const nameInput = document.getElementById("item-name-" + catId);
+  const name = nameInput.value.trim();
+  if (!name) { nameInput.focus(); return; }
+  const item = { id: uid(), name, assignee: 0, dueDate: null, intervalDays: 0, customRule: null, anchorMode: "fixed", done: false, lastCompletedDate: null, note: "", isOccurrence: false };
+  const categories = state.categories.map(c => c.id === catId ? { ...c, items: [...c.items, item] } : c);
+  window._addFormOpen[catId] = false;
+  persist({ ...state, categories });
+}
+function toggleItem(catId, itemId) {
+  const categories = state.categories.map(c => {
+    if (c.id !== catId) return c;
+    return { ...c, items: c.items.map(i => {
+      if (i.id !== itemId) return i;
+      if (i.intervalDays) {
+        if (!i.done) {
+          const anchor = i.anchorMode === "floating" ? todayStr() : (i.dueDate || todayStr());
+          const nextDate = (i.intervalDays === -1 && i.customRule)
+            ? nextCustomDate(i.customRule, anchor)
+            : addDays(anchor, i.intervalDays);
+          return { ...i, done: true, lastCompletedDate: todayStr(), dueDate: nextDate };
+        }
+        const prevDate = (i.intervalDays === -1 && i.customRule)
+          ? prevCustomDate(i.customRule, i.dueDate)
+          : addDays(i.dueDate, -i.intervalDays);
+        return { ...i, done: false, lastCompletedDate: null, dueDate: prevDate };
+      }
+      return { ...i, done: !i.done, lastCompletedDate: !i.done ? todayStr() : null };
+    })};
+  });
+  persist({ ...state, categories });
+}
+function cycleItemAssignee(catId, itemId) {
+  const categories = state.categories.map(c => {
+    if (c.id !== catId) return c;
+    return { ...c, items: c.items.map(i => i.id === itemId ? { ...i, assignee: (i.assignee + 1) % NUM_OWNERS } : i) };
+  });
+  persist({ ...state, categories });
+}
+function deleteItem(catId, itemId) {
+  const categories = state.categories.map(c => c.id === catId ? { ...c, items: c.items.filter(i => i.id !== itemId) } : c);
+  persist({ ...state, categories });
+}
+function deleteCategory(catId) {
+  persist({ ...state, categories: state.categories.filter(c => c.id !== catId) });
+}
+function makeRecurring(catId, itemId) {
+  setItemIntervalSimple(catId, itemId, "7");
+}
+function makeOneTime(catId, itemId) {
+  const categories = state.categories.map(c => {
+    if (c.id !== catId) return c;
+    return { ...c, items: c.items.map(i => i.id === itemId ? {
+      ...i, intervalDays: 0, customRule: null, dueDate: null, done: false, lastCompletedDate: null, isOccurrence: false,
+    } : i) };
+  });
+  persist({ ...state, categories });
+}
+function setItemDate(catId, itemId, value) {
+  state = { ...state, categories: state.categories.map(c => c.id === catId ? { ...c, items: c.items.map(i => {
+    if (i.id !== itemId) return i;
+    if (!i.intervalDays && value) return { ...i, dueDate: value, done: false, lastCompletedDate: null };
+    return { ...i, dueDate: value };
+  }) } : c) };
+  quietSave();
+}
+function setItemIntervalSimple(catId, itemId, value) {
+  const categories = state.categories.map(c => {
+    if (c.id !== catId) return c;
+    return { ...c, items: c.items.map(i => {
+      if (i.id !== itemId) return i;
+      const intervalDays = Number(value);
+      return { ...i, intervalDays, customRule: null, dueDate: intervalDays ? (i.dueDate || todayStr()) : i.dueDate };
+    })};
+  });
+  persist({ ...state, categories });
+}
+function onIntervalChange(catId, itemId, selectEl) {
+  if (selectEl.value === "custom") {
+    window._customPanelState[catId + ":" + itemId] = true;
+    render();
+  } else {
+    setItemIntervalSimple(catId, itemId, selectEl.value);
+  }
+}
+function setItemAnchorMode(catId, itemId, value) {
+  const categories = state.categories.map(c => {
+    if (c.id !== catId) return c;
+    return { ...c, items: c.items.map(i => i.id === itemId ? { ...i, anchorMode: value } : i) };
+  });
+  persist({ ...state, categories });
+}
+function saveCustomDays(catId, itemId) {
+  const input = document.getElementById("custom-days-" + catId + "-" + itemId);
+  const n = Math.max(1, Number(input.value) || 1);
+  const categories = state.categories.map(c => {
+    if (c.id !== catId) return c;
+    return { ...c, items: c.items.map(i => i.id === itemId ? { ...i, intervalDays: n, customRule: null, dueDate: i.dueDate || todayStr() } : i) };
+  });
+  window._customPanelState[catId + ":" + itemId] = false;
+  persist({ ...state, categories });
+}
+function saveCustomWeeks(catId, itemId) {
+  const input = document.getElementById("custom-weeks-" + catId + "-" + itemId);
+  const n = Math.max(1, Number(input.value) || 1);
+  const categories = state.categories.map(c => {
+    if (c.id !== catId) return c;
+    return { ...c, items: c.items.map(i => i.id === itemId ? { ...i, intervalDays: n * 7, customRule: null, dueDate: i.dueDate || todayStr() } : i) };
+  });
+  window._customPanelState[catId + ":" + itemId] = false;
+  persist({ ...state, categories });
+}
+function saveCustomMonthly(catId, itemId) {
+  const nthSel = document.getElementById("custom-nth-" + catId + "-" + itemId);
+  const wdSel = document.getElementById("custom-weekday-" + catId + "-" + itemId);
+  const rule = { nth: Number(nthSel.value), weekday: Number(wdSel.value) };
+  const categories = state.categories.map(c => {
+    if (c.id !== catId) return c;
+    return { ...c, items: c.items.map(i => i.id === itemId ? { ...i, intervalDays: -1, customRule: rule, dueDate: nextCustomDate(rule, todayStr()) } : i) };
+  });
+  window._customPanelState[catId + ":" + itemId] = false;
+  persist({ ...state, categories });
+}
+function toggleNoteOpen(catId, itemId) {
+  const key = catId + ":" + itemId;
+  window._noteOpenState[key] = !window._noteOpenState[key];
+  render();
+}
+function setItemNote(catId, itemId, value) {
+  state = { ...state, categories: state.categories.map(c => c.id === catId ? { ...c, items: c.items.map(i => i.id === itemId ? { ...i, note: value } : i) } : c) };
+  quietSave();
+}
+function startEditPerson(i) {
+  editingPerson = i; render();
+  const inp = root.querySelector(`[data-person-index="${i}"]`);
+  if (inp) { inp.focus(); inp.select(); }
+}
+function stopEditPerson() { editingPerson = null; render(); }
+function renamePerson(index, value) {
+  const people = [...state.people];
+  people[index] = value;
+  state = { ...state, people };
+  quietSave();
+}
+function startEditCategory(catId) {
+  editingCategoryId = catId; render();
+  const inp = root.querySelector(`[data-category-name-input="${catId}"]`);
+  if (inp) { inp.focus(); inp.select(); }
+}
+function stopEditCategory() { editingCategoryId = null; render(); }
+function renameCategory(catId, value) {
+  state = { ...state, categories: state.categories.map(c => c.id === catId ? { ...c, name: value } : c) };
+  quietSave();
+}
+function openItemEdit(key) {
+  window._itemEditOpen[key] = true;
+  render();
+}
+function toggleSchedule(key) {
+  window._scheduleOpen = window._scheduleOpen || {};
+  window._scheduleOpen[key] = !window._scheduleOpen[key];
+  render();
+}
+function confirmSchedule(catId, itemId, key) {
+  const ownerSel = document.getElementById("sched-owner-" + key);
+  const dateInput = document.getElementById("sched-date-" + key);
+  const noteInput = document.getElementById("sched-note-" + key);
+  const cat = state.categories.find(c => c.id === catId);
+  const original = cat ? cat.items.find(i => i.id === itemId) : null;
+  if (!original) return;
+  const newAssignee = ownerSel ? Number(ownerSel.value) : original.assignee;
+  const newDate = dateInput ? (dateInput.value || null) : original.dueDate;
+  const newNote = noteInput ? noteInput.value : original.note;
+
+  const occurrence = { ...original, id: uid(), assignee: newAssignee, dueDate: newDate, note: newNote, done: false, lastCompletedDate: null, isOccurrence: true };
+  const categories = state.categories.map(c => c.id === catId ? { ...c, items: [...c.items, occurrence] } : c);
+  window._scheduleOpen[key] = false;
+  persist({ ...state, categories });
+}
+function toggleTaskRowEdit(key) {
+  window._taskRowEditOpen[key] = !window._taskRowEditOpen[key];
+  render();
+}
+function saveTaskRowEdit(catId, itemId, key) {
+  const ownerSel = document.getElementById("rowedit-owner-" + key);
+  const dateInput = document.getElementById("rowedit-date-" + key);
+  const noteInput = document.getElementById("rowedit-note-" + key);
+  const categories = state.categories.map(c => {
+    if (c.id !== catId) return c;
+    return { ...c, items: c.items.map(i => i.id === itemId ? {
+      ...i,
+      assignee: ownerSel ? Number(ownerSel.value) : i.assignee,
+      dueDate: dateInput ? (dateInput.value || null) : i.dueDate,
+      note: noteInput ? noteInput.value : i.note,
+    } : i) };
+  });
+  window._taskRowEditOpen[key] = false;
+  persist({ ...state, categories });
+}
+function closeItemEdit(key) {
+  window._itemEditOpen[key] = false;
+  render();
+}
+function renameItem(catId, itemId, value) {
+  state = { ...state, categories: state.categories.map(c => c.id === catId ? { ...c, items: c.items.map(i => i.id === itemId ? { ...i, name: value } : i) } : c) };
+  quietSave();
+}
+function addCategory() {
+  const input = document.getElementById("new-category-input");
+  const name = input.value.trim();
+  if (!name) return;
+  window._addCategoryFormOpen = false;
+  persist({ ...state, categories: [...state.categories, { id: uid(), name, expanded: true, items: [] }] });
+}
+function toggleAddCategoryForm() {
+  window._addCategoryFormOpen = !window._addCategoryFormOpen;
+  render();
+}
+function addItemIntervalChanged(catId, selectEl) {
+  const customBlock = document.getElementById("add-custom-block-" + catId);
+  if (customBlock) customBlock.style.display = selectEl.value === "custom" ? "flex" : "none";
+  const anchorRow = document.getElementById("add-anchor-row-" + catId);
+  if (anchorRow) anchorRow.style.display = selectEl.value === "0" ? "none" : "flex";
+}
+function addCustomTypeChanged(catId, selectEl) {
+  const daysRow = document.getElementById("add-custom-days-row-" + catId);
+  const weeksRow = document.getElementById("add-custom-weeks-row-" + catId);
+  const monthlyRow = document.getElementById("add-custom-monthly-row-" + catId);
+  if (daysRow) daysRow.style.display = selectEl.value === "days" ? "flex" : "none";
+  if (weeksRow) weeksRow.style.display = selectEl.value === "weeks" ? "flex" : "none";
+  if (monthlyRow) monthlyRow.style.display = selectEl.value === "monthly" ? "flex" : "none";
+}
+function addItem(catId) {
+  const nameInput = document.getElementById("item-name-" + catId);
+  const dateInput = document.getElementById("item-date-" + catId);
+  const intervalSelect = document.getElementById("item-interval-" + catId);
+  const ownerSelect = document.getElementById("item-owner-" + catId);
+  const anchorSelect = document.getElementById("item-anchor-" + catId);
+  const noteInput = document.getElementById("item-note-" + catId);
+  const name = nameInput.value.trim();
+  if (!name) return;
+  const assignee = ownerSelect ? Number(ownerSelect.value) : 0;
+  const anchorMode = anchorSelect && anchorSelect.value === "floating" ? "floating" : "fixed";
+  const note = noteInput ? noteInput.value : "";
+  let intervalDays = 0, customRule = null, dueDate = dateInput.value || null;
+  if (intervalSelect.value === "custom") {
+    const typeSelect = document.getElementById("add-custom-type-" + catId);
+    if (typeSelect.value === "days") {
+      const daysInput = document.getElementById("add-custom-days-" + catId);
+      intervalDays = Math.max(1, Number(daysInput.value) || 1);
+      dueDate = dueDate || todayStr();
+    } else if (typeSelect.value === "weeks") {
+      const weeksInput = document.getElementById("add-custom-weeks-" + catId);
+      intervalDays = Math.max(1, Number(weeksInput.value) || 1) * 7;
+      dueDate = dueDate || todayStr();
+    } else {
+      const nthSel = document.getElementById("add-custom-nth-" + catId);
+      const wdSel = document.getElementById("add-custom-weekday-" + catId);
+      customRule = { nth: Number(nthSel.value), weekday: Number(wdSel.value) };
+      intervalDays = -1;
+      dueDate = nextCustomDate(customRule, todayStr());
+    }
+  } else {
+    intervalDays = Number(intervalSelect.value);
+    if (intervalDays) dueDate = dueDate || todayStr();
+  }
+  const item = { id: uid(), name, assignee, dueDate, intervalDays, customRule, anchorMode, done: false, note };
+  const categories = state.categories.map(c => c.id === catId ? { ...c, items: [...c.items, item] } : c);
+  window._addFormOpen = window._addFormOpen || {};
+  window._addFormOpen[catId] = false;
+  persist({ ...state, categories });
+}
+
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
+function ownerLabel(assignee) {
+  if (assignee === 2) return (state.people[0] || "Person 1") + " & " + (state.people[1] || "Person 2");
+  return state.people[assignee] || "Unassigned";
+}
+function ownerPillStatic(assignee) {
+  const c = OWNER_COLORS[assignee % OWNER_COLORS.length];
+  return `<span class="owner-pill" style="background:${c.bg};color:${c.color}"><span class="dot" style="background:${c.color}"></span>${escapeHtml(ownerLabel(assignee))}</span>`;
+}
+function assignBtn(assignee, onclick) {
+  const c = OWNER_COLORS[assignee % OWNER_COLORS.length];
+  return `<button class="owner-pill" style="background:${c.bg};color:${c.color}" onclick="${onclick}"><span class="dot" style="background:${c.color}"></span>${escapeHtml(ownerLabel(assignee))}</button>`;
+}
+function dateBitFor(item, pending) {
+  if (item.intervalDays === -1 && item.customRule) {
+    const overdue = item.dueDate && item.dueDate < todayStr();
+    return `<span class="${overdue ? "overdue" : ""}">${pending ? (overdue ? "Overdue " : "Due ") : "Next "}${niceDate(item.dueDate)} (${customLabel(item.customRule)})</span>`;
+  }
+  if (item.intervalDays) {
+    const overdue = item.dueDate && item.dueDate < todayStr();
+    return `<span class="${overdue ? "overdue" : ""}">${pending ? (overdue ? "Overdue " : "Due ") : "Next "}${niceDate(item.dueDate)}</span>`;
+  }
+  if (item.dueDate && pending) {
+    const overdue = item.dueDate < todayStr();
+    return `<span class="${overdue ? "overdue" : ""}">${overdue ? "Overdue " : "Due "}${niceDate(item.dueDate)}</span>`;
+  }
+  return "";
+}
+
+function renderFlatTaskRow(it) {
+  const pending = isPending(it);
+  const dateBit = dateBitFor(it, pending);
+  const key = it.categoryId + ":" + it.id;
+  const rowEditOpen = window._taskRowEditOpen && window._taskRowEditOpen[key];
+  const ownerOptsHtml = state.people.map((p, i) => `<option value="${i}" ${it.assignee === i ? "selected" : ""}>${escapeHtml(p)}</option>`).join("") + `<option value="2" ${it.assignee === 2 ? "selected" : ""}>Both</option>`;
+  return `
+    <div class="task ${!pending ? "done" : ""}" style="flex-wrap:wrap;">
+      <div class="checkbox ${!pending ? "checked" : ""}" data-toggle-item="${it.categoryId}:${it.id}">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" /></svg>
+      </div>
+      <div class="task-main">
+        <div class="task-text">${escapeHtml(it.name)}</div>
+        <div class="task-meta">
+          <span class="tag">${escapeHtml(it.categoryName)}</span>
+          ${assignBtn(it.assignee, `cycleItemAssignee('${it.categoryId}','${it.id}')`)}
+        </div>
+        ${it.note ? `<div class="sub-info">${escapeHtml(it.note)}</div>` : ""}
+      </div>
+      ${dateBit ? `<div class="task-date-col">${dateBit}</div>` : ""}
+      <button class="edit-btn" data-toggle-task-row-edit="${key}">Edit</button>
+      ${!it.intervalDays ? `<button class="delete-btn" data-delete-item="${it.categoryId}:${it.id}" aria-label="Delete">×</button>` : ""}
+      ${rowEditOpen ? `
+        <div class="custom-panel" style="width:100%;">
+          <div class="custom-panel-row">
+            <select id="rowedit-owner-${key}">${ownerOptsHtml}</select>
+            ${it.intervalDays === 0 ? `<input type="date" class="custom-input" id="rowedit-date-${key}" value="${it.dueDate || ""}" />` : ""}
+          </div>
+          <div class="note-box" style="border-top:none;padding-top:0;">
+            <textarea placeholder="Any extra detail…" id="rowedit-note-${key}">${escapeHtml(it.note)}</textarea>
+          </div>
+          <div class="custom-panel-row">
+            <button class="save-custom" data-save-task-row-edit="${key}">Save</button>
+            <button class="secondary-btn" data-toggle-task-row-edit="${key}" type="button">Cancel</button>
+          </div>
+        </div>
+      ` : ""}
+    </div>
+  `;
+}
+
+function renderCustomPanel(catId, itemId, item) {
+  const currentType = item.intervalDays === -1 ? "monthly" : (item.intervalDays > 0 && item.intervalDays % 7 === 0 ? "weeks" : "days");
+  const currentDays = item.intervalDays > 0 ? item.intervalDays : 3;
+  const currentWeeks = item.intervalDays > 0 ? Math.round(item.intervalDays / 7) : 3;
+  const nthOptsHtml = NTH_OPTIONS.map(o => `<option value="${o.v}" ${item.customRule && item.customRule.nth === o.v ? "selected" : ""}>${o.l}</option>`).join("");
+  const wdOptsHtml = WEEKDAY_NAMES.map((n, i) => `<option value="${i}" ${item.customRule && item.customRule.weekday === i ? "selected" : ""}>${n}</option>`).join("");
+  return `
+    <div class="custom-panel">
+      <div class="custom-panel-row">
+        <select class="custom-input" id="custom-type-${catId}-${itemId}" onchange="
+          document.getElementById('custom-days-row-${catId}-${itemId}').style.display=this.value==='days'?'flex':'none';
+          document.getElementById('custom-weeks-row-${catId}-${itemId}').style.display=this.value==='weeks'?'flex':'none';
+          document.getElementById('custom-monthly-row-${catId}-${itemId}').style.display=this.value==='monthly'?'flex':'none';
+        ">
+          <option value="days" ${currentType === "days" ? "selected" : ""}>Every N days</option>
+          <option value="weeks" ${currentType === "weeks" ? "selected" : ""}>Every N weeks</option>
+          <option value="monthly" ${currentType === "monthly" ? "selected" : ""}>Specific day each month</option>
+        </select>
+      </div>
+      <div class="custom-panel-row" id="custom-days-row-${catId}-${itemId}" style="display:${currentType === "days" ? "flex" : "none"}">
+        <span style="font-size:12px;color:var(--sage-soft)">Every</span>
+        <input type="number" min="1" class="custom-input" id="custom-days-${catId}-${itemId}" value="${currentDays}" style="width:50px" />
+        <span style="font-size:12px;color:var(--sage-soft)">days</span>
+        <button class="save-custom" onclick="saveCustomDays('${catId}','${itemId}')">Save</button>
+      </div>
+      <div class="custom-panel-row" id="custom-weeks-row-${catId}-${itemId}" style="display:${currentType === "weeks" ? "flex" : "none"}">
+        <span style="font-size:12px;color:var(--sage-soft)">Every</span>
+        <input type="number" min="1" class="custom-input" id="custom-weeks-${catId}-${itemId}" value="${currentWeeks}" style="width:50px" />
+        <span style="font-size:12px;color:var(--sage-soft)">weeks</span>
+        <button class="save-custom" onclick="saveCustomWeeks('${catId}','${itemId}')">Save</button>
+      </div>
+      <div class="custom-panel-row" id="custom-monthly-row-${catId}-${itemId}" style="display:${currentType === "monthly" ? "flex" : "none"}">
+        <select class="custom-input" id="custom-nth-${catId}-${itemId}">${nthOptsHtml}</select>
+        <select class="custom-input" id="custom-weekday-${catId}-${itemId}">${wdOptsHtml}</select>
+        <span style="font-size:12px;color:var(--sage-soft)">of the month</span>
+        <button class="save-custom" onclick="saveCustomMonthly('${catId}','${itemId}')">Save</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderItemRow(cat, item) {
+  const pending = isPending(item);
+  const key = cat.id + ":" + item.id;
+  const editOpen = window._itemEditOpen && window._itemEditOpen[key];
+
+  if (!editOpen) {
+    const scheduleOpen = window._scheduleOpen && window._scheduleOpen[key];
+    const isDormantOneTime = !item.intervalDays && !isWeekRelevant(item);
+    const ownerOptsHtml = state.people.map((p, i) => `<option value="${i}" ${item.assignee === i ? "selected" : ""}>${escapeHtml(p)}</option>`).join("") + `<option value="2" ${item.assignee === 2 ? "selected" : ""}>Both</option>`;
+    return `
+      <div class="item-row">
+        <div class="item-top">
+          <div class="item-main">
+            <div class="item-name">${escapeHtml(item.name)}</div>
+            <div class="item-meta">
+              ${assignBtn(item.assignee, `cycleItemAssignee('${cat.id}','${item.id}')`)}
+            </div>
+            ${item.intervalDays === -1 ? `<div class="sub-info">${customLabel(item.customRule)}</div>` : ""}
+            ${item.note ? `<div class="sub-info">${escapeHtml(item.note)}</div>` : ""}
+          </div>
+          <button class="edit-btn" data-open-edit-item="${key}">Edit</button>
+          ${isDormantOneTime ? `<button class="edit-btn" data-toggle-schedule="${key}">+</button>` : ""}
+        </div>
+        ${scheduleOpen ? `
+          <div class="custom-panel">
+            <div class="custom-panel-row">
+              <select id="sched-owner-${key}">${ownerOptsHtml}</select>
+              <input type="date" class="custom-input" id="sched-date-${key}" value="${item.dueDate || ""}" />
+            </div>
+            <div class="note-box" style="border-top:none;padding-top:0;">
+              <textarea placeholder="Any extra detail…" id="sched-note-${key}">${escapeHtml(item.note)}</textarea>
+            </div>
+            <div class="custom-panel-row">
+              <button class="save-custom" data-confirm-schedule="${key}">Schedule it</button>
+              <button class="secondary-btn" data-cancel-schedule="${key}" type="button">Cancel</button>
+            </div>
+          </div>
+        ` : ""}
+      </div>
+    `;
+  }
+
+  const customOpen = window._customPanelState[key];
+  const selectValue = item.intervalDays === -1 ? "custom" : String(item.intervalDays);
+  const intervalOptsHtml = INTERVAL_OPTIONS.filter(o => o.value !== "0").map(o =>
+    `<option value="${o.value}" ${o.value === selectValue ? "selected" : ""}>${o.label}</option>`
+  ).join("");
+  const recurringFieldsHtml = item.intervalDays ? `
+    <div class="item-meta">
+      <select class="item-interval-select" onchange="onIntervalChange('${cat.id}','${item.id}',this)">${intervalOptsHtml}</select>
+      ${item.intervalDays !== -1 ? `<input type="date" class="item-date-input" value="${item.dueDate || ""}" data-item-date="${cat.id}:${item.id}" />` : ""}
+      ${item.intervalDays === -1 ? `<span class="tag">${dateBitFor(item, pending)}</span>` : ""}
+    </div>
+    ${customOpen ? renderCustomPanel(cat.id, item.id, item) : ""}
+    <div class="item-meta">
+      <select class="item-interval-select" onchange="setItemAnchorMode('${cat.id}','${item.id}',this.value)">
+        <option value="fixed" ${item.anchorMode !== "floating" ? "selected" : ""}>Keep original schedule</option>
+        <option value="floating" ${item.anchorMode === "floating" ? "selected" : ""}>Restart from check date</option>
+      </select>
+    </div>
+    <button class="secondary-btn" data-make-onetime="${cat.id}:${item.id}" type="button" style="align-self:flex-start;">Make one-time instead</button>
+  ` : `
+    <button class="secondary-btn" data-make-recurring="${cat.id}:${item.id}" type="button" style="align-self:flex-start;">Make this recurring…</button>
+  `;
+  return `
+    <div class="item-row">
+      <div class="edit-panel-full">
+        <input type="text" class="item-name-input" value="${escapeHtml(item.name)}" data-item-name-input="${key}" placeholder="Task name" />
+        <div class="item-meta">
+          ${assignBtn(item.assignee, `cycleItemAssignee('${cat.id}','${item.id}')`)}
+        </div>
+        ${recurringFieldsHtml}
+        <div class="note-box" style="border-top:none;padding-top:0;margin-top:4px;">
+          <textarea placeholder="Any extra detail…" data-item-note="${key}">${escapeHtml(item.note)}</textarea>
+        </div>
+        <div class="add-item-form-row">
+          <button data-close-edit-item="${key}">Done</button>
+          <button class="secondary-btn" data-delete-item="${cat.id}:${item.id}" type="button">Delete task</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderCategory(c) {
+  const templateCount = c.items.filter(it => !(it.isOccurrence && isWeekRelevant(it))).length;
+  const visibleItems = sortPendingFirst(c.items.filter(matchesFilter).filter(it => !(it.isOccurrence && isWeekRelevant(it))));
+  const itemsHtml = visibleItems.length
+    ? visibleItems.map(it => renderItemRow(c, it)).join("")
+    : `<div class="empty">No items for this filter yet.</div>`;
+  const nthOptsHtml = NTH_OPTIONS.map(o => `<option value="${o.v}">${o.l}</option>`).join("");
+  const wdOptsHtml = WEEKDAY_NAMES.map((n, i) => `<option value="${i}">${n}</option>`).join("");
+  const ownerOptsHtml = state.people.map((p, i) => `<option value="${i}">${escapeHtml(p)}</option>`).join("") + `<option value="2">Both</option>`;
+  const isEditingCat = editingCategoryId === c.id;
+  const titleHtml = isEditingCat
+    ? `<input class="category-title-input" value="${escapeHtml(c.name)}" data-category-name-input="${c.id}" onclick="event.stopPropagation()" />`
+    : `<div class="category-title">${escapeHtml(c.name)}</div>`;
+  return `
+    <div class="category">
+      <div class="category-head" data-toggle-category="${c.id}">
+        <svg class="chevron ${c.expanded ? "open" : ""}" width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        ${titleHtml}
+        <button class="edit-pencil" data-edit-category="${c.id}" aria-label="Rename category" onclick="event.stopPropagation()">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <div class="category-sub">${templateCount} task${templateCount === 1 ? "" : "s"}</div>
+        <button class="delete-btn" data-delete-category="${c.id}" aria-label="Delete category">×</button>
+      </div>
+      ${c.expanded ? `
+        <div class="category-body">
+          ${itemsHtml}
+          ${(window._addFormOpen && window._addFormOpen[c.id]) ? (
+            (window._addFormMode && window._addFormMode[c.id] === "recurring") ? `
+            <div class="add-item-form">
+              <div class="add-item-form-row"><input type="text" id="item-name-${c.id}" placeholder="Task name…" value="${escapeHtml((window._addFormDraftName && window._addFormDraftName[c.id]) || "")}" /></div>
+              <div class="add-item-form-row">
+                <select id="item-owner-${c.id}">${ownerOptsHtml}</select>
+                <select class="item-interval-select" id="item-interval-${c.id}" onchange="addItemIntervalChanged('${c.id}',this)">${INTERVAL_OPTIONS.filter(o => o.value !== "0").map(o => `<option value="${o.value}">${o.label}</option>`).join("")}</select>
+                <input type="date" id="item-date-${c.id}" />
+              </div>
+              <div class="custom-panel" id="add-custom-block-${c.id}" style="display:none">
+                <div class="custom-panel-row">
+                  <select class="custom-input" id="add-custom-type-${c.id}" onchange="addCustomTypeChanged('${c.id}',this)">
+                    <option value="days">Every N days</option>
+                    <option value="weeks" selected>Every N weeks</option>
+                    <option value="monthly">Specific day each month</option>
+                  </select>
+                </div>
+                <div class="custom-panel-row" id="add-custom-days-row-${c.id}" style="display:none">
+                  <span style="font-size:12px;color:var(--sage-soft)">Every</span>
+                  <input type="number" min="1" class="custom-input" id="add-custom-days-${c.id}" value="10" style="width:50px" />
+                  <span style="font-size:12px;color:var(--sage-soft)">days</span>
+                </div>
+                <div class="custom-panel-row" id="add-custom-weeks-row-${c.id}" style="display:flex">
+                  <span style="font-size:12px;color:var(--sage-soft)">Every</span>
+                  <input type="number" min="1" class="custom-input" id="add-custom-weeks-${c.id}" value="3" style="width:50px" />
+                  <span style="font-size:12px;color:var(--sage-soft)">weeks</span>
+                </div>
+                <div class="custom-panel-row" id="add-custom-monthly-row-${c.id}" style="display:none">
+                  <select class="custom-input" id="add-custom-nth-${c.id}">${nthOptsHtml}</select>
+                  <select class="custom-input" id="add-custom-weekday-${c.id}">${wdOptsHtml}</select>
+                  <span style="font-size:12px;color:var(--sage-soft)">of the month</span>
+                </div>
+              </div>
+              <div class="add-item-form-row" id="add-anchor-row-${c.id}" style="display:flex">
+                <span style="font-size:12px;color:var(--sage-soft)">If done early or late:</span>
+                <select id="item-anchor-${c.id}">
+                  <option value="fixed" selected>Keep original schedule</option>
+                  <option value="floating">Restart count from when checked</option>
+                </select>
+              </div>
+              <textarea id="item-note-${c.id}" placeholder="Any extra detail…" style="border:1px solid var(--sage-line);border-radius:8px;padding:8px 10px;font-size:13px;background:var(--sage-bg);font-family:inherit;color:var(--sage-text);min-height:44px;resize:vertical;"></textarea>
+              <div class="add-item-form-row">
+                <button data-add-item="${c.id}">Add recurring task</button>
+                <button class="secondary-btn" data-cancel-add="${c.id}" type="button">Cancel</button>
+              </div>
+            </div>
+            ` : `
+            <div class="add-item-form">
+              <div class="add-item-form-row"><input type="text" id="item-name-${c.id}" placeholder="Task name…" /></div>
+              <div class="add-item-form-row" style="font-size:12px;color:var(--sage-soft);">Is this a recurring task, or one-time?</div>
+              <div class="add-item-form-row">
+                <button data-choose-onetime="${c.id}" type="button">One-time</button>
+                <button data-choose-recurring="${c.id}" type="button">Recurring</button>
+                <button class="secondary-btn" data-cancel-add="${c.id}" type="button">Cancel</button>
+              </div>
+            </div>
+            `
+          ) : `
+            <button class="add-task-toggle" data-open-add="${c.id}">+ Add task</button>
+          `}
+        </div>
+      ` : ""}
+    </div>
+  `;
+}
+
+function render(saveError) {
+  if (!state) return;
+
+  const peopleHtml = state.people.map((name, i) => {
+    const c = OWNER_COLORS[i % OWNER_COLORS.length];
+    const active = activeFilter === i;
+    const isEditing = editingPerson === i;
+    const inner = isEditing
+      ? `<input value="${escapeHtml(name)}" maxlength="16" data-person-index="${i}" onclick="event.stopPropagation()" />`
+      : `<span class="name">${escapeHtml(name)}</span>`;
+    return `
+      <div class="person-chip ${active ? "active" : ""}" style="--chip-color:${c.color};--chip-bg:${c.bg}" data-toggle-filter="${i}">
+        <span class="dot" style="background:${c.color}"></span>
+        ${inner}
+        <button class="edit-pencil" data-edit-person="${i}" aria-label="Rename" onclick="event.stopPropagation()">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+    `;
+  }).join("") + (() => {
+    const c = OWNER_COLORS[2];
+    const active = activeFilter === 2;
+    return `
+      <div class="person-chip ${active ? "active" : ""}" style="--chip-color:${c.color};--chip-bg:${c.bg}" data-toggle-filter="2">
+        <span class="dot" style="background:${c.color}"></span>
+        <span class="name">Both</span>
+      </div>
+    `;
+  })();
+
+  const flat = allItemsFlat().filter(it => matchesFilter(it) && isWeekRelevant(it));
+  const openItems = sortByDueDate(flat.filter(isPending));
+  const completedItems = flat.filter(it => !isPending(it));
+  const openHtml = openItems.length ? openItems.map(renderFlatTaskRow).join("") : `<div class="empty">Nothing open for this filter.</div>`;
+  const completedHtml = completedItems.length ? completedItems.map(renderFlatTaskRow).join("") : `<div class="empty">Nothing completed yet this week.</div>`;
+  const catsHtml = state.categories.length ? state.categories.map(renderCategory).join("") : `<div class="empty">No categories yet — add one below.</div>`;
+
+  root.innerHTML = `
+    <div class="header">
+      <div class="eyebrow">This week <span class="range">(${weekRangeLabel()})</span></div>
+      <div class="today-date">${todayLabel()}</div>
+      <div class="title">Household Checklist</div>
+    </div>
+    <div class="people-row">${peopleHtml}</div>
+    ${activeFilter !== null ? `<div class="filter-note">${activeFilter === 2 ? "Showing only shared (Both) tasks" : `Showing ${escapeHtml(state.people[activeFilter])}'s tasks + shared (Both) tasks`} — tap again to show everyone</div>` : ""}
+
+    <div class="section-head" data-toggle-tasks-open="1">
+      <span class="section-label">Weekly Open Tasks</span>
+      <svg class="section-chevron ${tasksOpen ? "open" : ""}" width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+    ${tasksOpen ? `<div class="list">${openHtml}</div>` : ""}
+
+    <div class="section-head" data-toggle-completed-open="1">
+      <span class="section-label">Weekly Completed Tasks</span>
+      <svg class="section-chevron ${completedOpen ? "open" : ""}" width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+    ${completedOpen ? `<div class="list">${completedHtml}</div>` : ""}
+
+    <div class="section-head" data-toggle-categories-open="1">
+      <span class="section-label">Categories</span>
+      <svg class="section-chevron ${categoriesOpen ? "open" : ""}" width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+    ${categoriesOpen ? `<div class="list">${catsHtml}</div>` : ""}
+    ${window._addCategoryFormOpen ? `
+      <div class="add-row">
+        <input id="new-category-input" placeholder="New category (e.g. Bills)…" />
+        <button id="add-category-btn">Add</button>
+        <button class="secondary-btn" id="cancel-add-category-btn" type="button">Cancel</button>
+      </div>
+    ` : `
+      <div style="padding: 12px 16px 0 16px;">
+        <button class="add-task-toggle" id="open-add-category-btn">+ Add category</button>
+      </div>
+    `}
+    ${saveError ? `<div class="status">Couldn't save — check your connection and try again.</div>` : ""}
+  `;
+
+  root.querySelectorAll("[data-toggle-filter]").forEach(el => el.addEventListener("click", () => toggleFilter(Number(el.dataset.toggleFilter))));
+  root.querySelectorAll("[data-edit-person]").forEach(el => el.addEventListener("click", () => startEditPerson(Number(el.dataset.editPerson))));
+  root.querySelectorAll("[data-person-index]").forEach(el => {
+    el.addEventListener("input", () => renamePerson(Number(el.dataset.personIndex), el.value));
+    el.addEventListener("keydown", (e) => { if (e.key === "Enter") stopEditPerson(); });
+    el.addEventListener("blur", () => stopEditPerson());
+  });
+  const tasksHead = root.querySelector("[data-toggle-tasks-open]");
+  if (tasksHead) tasksHead.addEventListener("click", toggleTasksOpen);
+  const completedHead = root.querySelector("[data-toggle-completed-open]");
+  if (completedHead) completedHead.addEventListener("click", toggleCompletedOpen);
+  const catsHead = root.querySelector("[data-toggle-categories-open]");
+  if (catsHead) catsHead.addEventListener("click", toggleCategoriesOpen);
+  const addCatBtn = document.getElementById("add-category-btn");
+  if (addCatBtn) addCatBtn.addEventListener("click", addCategory);
+  const newCatInput = document.getElementById("new-category-input");
+  if (newCatInput) newCatInput.addEventListener("keydown", e => { if (e.key === "Enter") addCategory(); });
+  const cancelAddCatBtn = document.getElementById("cancel-add-category-btn");
+  if (cancelAddCatBtn) cancelAddCatBtn.addEventListener("click", toggleAddCategoryForm);
+  const openAddCatBtn = document.getElementById("open-add-category-btn");
+  if (openAddCatBtn) openAddCatBtn.addEventListener("click", toggleAddCategoryForm);
+
+  root.querySelectorAll("[data-toggle-item]").forEach(el => {
+    const [catId, itemId] = el.dataset.toggleItem.split(":");
+    el.addEventListener("click", () => toggleItem(catId, itemId));
+  });
+  root.querySelectorAll("[data-toggle-category]").forEach(el => el.addEventListener("click", (ev) => {
+    if (ev.target.closest("[data-delete-category]") || ev.target.closest("[data-edit-category]")) return;
+    toggleCategoryExpanded(el.dataset.toggleCategory);
+  }));
+  root.querySelectorAll("[data-delete-category]").forEach(el => el.addEventListener("click", (ev) => { ev.stopPropagation(); deleteCategory(el.dataset.deleteCategory); }));
+  root.querySelectorAll("[data-edit-category]").forEach(el => el.addEventListener("click", () => startEditCategory(el.dataset.editCategory)));
+  root.querySelectorAll("[data-category-name-input]").forEach(el => {
+    el.addEventListener("input", () => renameCategory(el.dataset.categoryNameInput, el.value));
+    el.addEventListener("keydown", (e) => { if (e.key === "Enter") stopEditCategory(); });
+    el.addEventListener("blur", () => stopEditCategory());
+  });
+  root.querySelectorAll("[data-open-edit-item]").forEach(el => {
+    el.addEventListener("click", () => openItemEdit(el.dataset.openEditItem));
+  });
+  root.querySelectorAll("[data-toggle-schedule]").forEach(el => {
+    el.addEventListener("click", () => toggleSchedule(el.dataset.toggleSchedule));
+  });
+  root.querySelectorAll("[data-cancel-schedule]").forEach(el => {
+    el.addEventListener("click", () => toggleSchedule(el.dataset.cancelSchedule));
+  });
+  root.querySelectorAll("[data-confirm-schedule]").forEach(el => {
+    const key = el.dataset.confirmSchedule;
+    const [catId, itemId] = key.split(":");
+    el.addEventListener("click", () => confirmSchedule(catId, itemId, key));
+  });
+  root.querySelectorAll("[data-toggle-task-row-edit]").forEach(el => {
+    el.addEventListener("click", () => toggleTaskRowEdit(el.dataset.toggleTaskRowEdit));
+  });
+  root.querySelectorAll("[data-save-task-row-edit]").forEach(el => {
+    const key = el.dataset.saveTaskRowEdit;
+    const [catId, itemId] = key.split(":");
+    el.addEventListener("click", () => saveTaskRowEdit(catId, itemId, key));
+  });
+  root.querySelectorAll("[data-close-edit-item]").forEach(el => {
+    el.addEventListener("click", () => closeItemEdit(el.dataset.closeEditItem));
+  });
+  root.querySelectorAll("[data-make-recurring]").forEach(el => {
+    const [catId, itemId] = el.dataset.makeRecurring.split(":");
+    el.addEventListener("click", () => makeRecurring(catId, itemId));
+  });
+  root.querySelectorAll("[data-make-onetime]").forEach(el => {
+    const [catId, itemId] = el.dataset.makeOnetime.split(":");
+    el.addEventListener("click", () => makeOneTime(catId, itemId));
+  });
+  root.querySelectorAll("[data-item-name-input]").forEach(el => {
+    const [catId, itemId] = el.dataset.itemNameInput.split(":");
+    el.addEventListener("input", () => renameItem(catId, itemId, el.value));
+  });
+  root.querySelectorAll("[data-delete-item]").forEach(el => {
+    const [catId, itemId] = el.dataset.deleteItem.split(":");
+    el.addEventListener("click", () => deleteItem(catId, itemId));
+  });
+  root.querySelectorAll("[data-item-date]").forEach(el => {
+    const [catId, itemId] = el.dataset.itemDate.split(":");
+    el.addEventListener("change", () => setItemDate(catId, itemId, el.value));
+  });
+  root.querySelectorAll("[data-item-note]").forEach(el => {
+    const [catId, itemId] = el.dataset.itemNote.split(":");
+    el.addEventListener("input", () => setItemNote(catId, itemId, el.value));
+  });
+  root.querySelectorAll("[data-add-item]").forEach(el => el.addEventListener("click", () => addItem(el.dataset.addItem)));
+  root.querySelectorAll("[data-open-add]").forEach(el => el.addEventListener("click", () => toggleAddForm(el.dataset.openAdd)));
+  root.querySelectorAll("[data-cancel-add]").forEach(el => el.addEventListener("click", () => toggleAddForm(el.dataset.cancelAdd)));
+  root.querySelectorAll("[data-choose-onetime]").forEach(el => el.addEventListener("click", () => chooseOneTimeQuick(el.dataset.chooseOnetime)));
+  root.querySelectorAll("[data-choose-recurring]").forEach(el => el.addEventListener("click", () => chooseRecurringMode(el.dataset.chooseRecurring)));
+}
+
+function applyAutoWeeklyReset(s) {
+  return s;
+}
+function applyAutoDueRollover(s) {
+  const today = todayStr();
+  const categories = s.categories.map(c => ({
+    ...c,
+    items: c.items.map(i => (i.intervalDays && i.done && i.dueDate && i.dueDate <= today
+      ? { ...i, done: false, lastCompletedDate: null }
+      : i)),
+  }));
+  return { ...s, categories };
+}
+function applyOneTimeDormancy(s) {
+  const monday = mondayOfThisWeek();
+  const sunday = addDays(monday, 6);
+  const categories = s.categories.map(c => {
+    const items = c.items.reduce((acc, i) => {
+      const completedPastWeek = !i.intervalDays && i.done && i.lastCompletedDate
+        && !(i.lastCompletedDate >= monday && i.lastCompletedDate <= sunday);
+      if (!completedPastWeek) { acc.push(i); return acc; }
+      if (i.isOccurrence) return acc; // disposable — drop it entirely, template is untouched
+      acc.push({ ...i, done: false, dueDate: null, lastCompletedDate: null }); // legacy template item, just reset
+      return acc;
+    }, []);
+    return { ...c, items };
+  });
+  return { ...s, categories };
+}
+
+async function init() {
+  let record;
+  try {
+    record = await loadRemote();
+  } catch (e) {
+    root.innerHTML = '<div class="status">Couldn\'t load your checklist — check your connection. Retrying…</div>';
+    setTimeout(init, 3000);
+    return;
+  }
+  let normalized = normalize(record);
+  normalized = applyAutoWeeklyReset(normalized);
+  normalized = applyAutoDueRollover(normalized);
+  normalized = applyOneTimeDormancy(normalized);
+  state = normalized;
+  lastKnownTotalCategories = countCategories(normalized);
+  render();
+  setInterval(async () => {
+    if (saving) return;
+    const activeTag = document.activeElement && document.activeElement.tagName;
+    const isTyping = root.contains(document.activeElement) && (activeTag === "INPUT" || activeTag === "SELECT" || activeTag === "TEXTAREA");
+    if (isTyping || isComposingSomething()) return;
+    try {
+      const rec = await loadRemote();
+      let n = normalize(rec);
+      n = applyAutoWeeklyReset(n);
+      n = applyAutoDueRollover(n);
+      n = applyOneTimeDormancy(n);
+      state = n;
+      lastKnownTotalCategories = countCategories(n);
+      render();
+    } catch (e) {}
+  }, 4000);
+}
+function isComposingSomething() {
+  if (window._addCategoryFormOpen) return true;
+  if (window._addFormOpen) {
+    for (const k in window._addFormOpen) if (window._addFormOpen[k]) return true;
+  }
+  if (window._itemEditOpen) {
+    for (const k in window._itemEditOpen) if (window._itemEditOpen[k]) return true;
+  }
+  if (window._scheduleOpen) {
+    for (const k in window._scheduleOpen) if (window._scheduleOpen[k]) return true;
+  }
+  if (window._taskRowEditOpen) {
+    for (const k in window._taskRowEditOpen) if (window._taskRowEditOpen[k]) return true;
+  }
+  if (editingPerson !== null || editingCategoryId !== null) return true;
+  return false;
+}
+
+init();
+</script>
+</body>
+</html>
