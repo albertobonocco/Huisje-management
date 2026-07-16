@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Household Checklist</title>
+<title>Household Tasks</title>
 <style>
   :root {
     --sage: #5B7553; --sage-dark: #3E5238; --sage-bg: #F3F5EF; --sage-card: #FFFFFF;
@@ -14,10 +14,17 @@
   * { box-sizing: border-box; }
   body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--sage-bg); color: var(--sage-text); }
   #app-root { min-height: 100vh; padding: 0 0 40px 0; max-width: 480px; margin: 0 auto; }
+  .tab-bar { display: flex; gap: 0; border-bottom: 1px solid var(--sage-line); background: var(--sage-card); position: sticky; top: 0; z-index: 5; }
+  .tab-btn { flex: 1; border: none; background: none; padding: 14px 8px; font-size: 14px; font-weight: 700; color: var(--sage-soft); cursor: pointer; border-bottom: 3px solid transparent; }
+  .tab-btn.active { color: var(--sage); border-bottom-color: var(--sage); }
+  .cl-reset-btn { border: 1px solid var(--sage-line); background: var(--sage-bg); color: var(--sage-soft); font-size: 11px; font-weight: 700; padding: 5px 10px; border-radius: 8px; cursor: pointer; flex-shrink: 0; }
+  .cl-item-row { display: flex; align-items: flex-start; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--sage-line); }
+  .cl-item-row:last-of-type { border-bottom: none; }
+  .cl-item-main { flex: 1; min-width: 0; }
   .header { padding: 24px 20px 16px 20px; text-align: center; }
-  .eyebrow { font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--sage); font-weight: 700; }
-  .today-date { font-size: 15px; color: var(--sage-text); font-weight: 600; margin-top: 3px; }
-  .eyebrow .range { color: var(--sage-soft); font-weight: 400; text-transform: none; letter-spacing: 0; }
+  .eyebrow { font-size: 13px; color: var(--sage); font-weight: 500; text-transform: none; letter-spacing: normal; }
+  .today-date { font-size: 15px; color: var(--sage); font-weight: 600; margin-top: 3px; }
+  .eyebrow .range { color: var(--sage-soft); font-weight: 500; text-transform: none; letter-spacing: normal; }
   .title { font-size: 24px; font-weight: 800; letter-spacing: -0.01em; margin: 6px 0 16px 0; }
   .people-row { display: flex; gap: 8px; padding: 0 20px; }
   .person-chip {
@@ -93,7 +100,8 @@
   .add-task-toggle { width: 100%; margin-top: 10px; border: 1px dashed var(--sage-line); background: none; color: var(--sage); font-weight: 700; font-size: 13px; padding: 10px; border-radius: 8px; cursor: pointer; }
   .type-toggle-row { display: flex; gap: 6px; }
   .type-toggle-btn { flex: 1; border: 1.5px solid var(--sage-line); background: var(--sage-card); color: var(--sage-soft); font-weight: 700; font-size: 13px; padding: 9px; border-radius: 8px; cursor: pointer; }
-  .type-toggle-btn.active { background: var(--sage); border-color: var(--sage); color: white; }
+  button.type-toggle-btn { background: var(--sage-card) !important; color: var(--sage) !important; border: 1.5px solid var(--sage-line) !important; }
+  button.type-toggle-btn.active { background: var(--sage) !important; border-color: var(--sage) !important; color: white !important; }
   .custom-panel { display: flex; flex-direction: column; gap: 6px; padding: 8px; margin-top: 6px; background: var(--sage-bg); border-radius: 8px; border: 1px dashed var(--sage-line); width: 100%; }
   .custom-panel-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .custom-panel button.save-custom { border: none; background: var(--sage); color: white; font-weight: 700; font-size: 12px; padding: 5px 10px; border-radius: 8px; cursor: pointer; }
@@ -127,17 +135,22 @@ const NTH_OPTIONS = [{v:1,l:"1st"},{v:2,l:"2nd"},{v:3,l:"3rd"},{v:4,l:"4th"},{v:
 let state = null;
 let saving = false;
 let activeFilter = null;
+let activeTab = "tasks";
 let tasksOpen = true;
 let completedOpen = true;
 let categoriesOpen = true;
 let editingPerson = null;
 let editingCategoryId = null;
+let editingChecklistId = null;
 let root = document.getElementById("app-root");
 window._noteOpenState = window._noteOpenState || {};
 window._customPanelState = window._customPanelState || {};
 window._itemEditOpen = window._itemEditOpen || {};
 window._scheduleOpen = window._scheduleOpen || {};
 window._taskRowEditOpen = window._taskRowEditOpen || {};
+window._addChecklistFormOpen = window._addChecklistFormOpen || {};
+window._clItemEditOpen = window._clItemEditOpen || {};
+window._clNoteOpenState = window._clNoteOpenState || {};
 
 function uid() { return "id" + Math.random().toString(36).slice(2, 9); }
 function pad2(n) { return String(n).padStart(2, "0"); }
@@ -252,6 +265,7 @@ function defaultState() {
       ]},
       { id: uid(), name: "General", expanded: false, items: [] },
     ],
+    checklists: [],
   };
 }
 
@@ -329,7 +343,13 @@ function normalize(record) {
   } else {
     categories = base.categories;
   }
-  return { people, lastResetWeekStart: record.lastResetWeekStart || mondayOfThisWeek(), categories };
+  const checklists = Array.isArray(record.checklists) ? record.checklists.map(cl => ({
+    id: cl.id || uid(), name: cl.name || "Untitled", expanded: cl.expanded !== false,
+    items: Array.isArray(cl.items) ? cl.items.map(it => ({
+      id: it.id || uid(), name: it.name || "Untitled", note: it.note || "", done: !!it.done,
+    })) : [],
+  })) : [];
+  return { people, lastResetWeekStart: record.lastResetWeekStart || mondayOfThisWeek(), categories, checklists };
 }
 
 function allItemsFlat() {
@@ -410,6 +430,82 @@ function deleteItem(catId, itemId) {
 }
 function deleteCategory(catId) {
   persist({ ...state, categories: state.categories.filter(c => c.id !== catId) });
+}
+function setActiveTab(tab) {
+  activeTab = tab;
+  render();
+}
+function toggleAddChecklistForm() {
+  window._addChecklistFormOpen.open = !window._addChecklistFormOpen.open;
+  render();
+}
+function addChecklist() {
+  const input = document.getElementById("new-checklist-input");
+  const name = input.value.trim();
+  if (!name) return;
+  window._addChecklistFormOpen.open = false;
+  persist({ ...state, checklists: [...state.checklists, { id: uid(), name, expanded: true, items: [] }] });
+}
+function toggleChecklistExpanded(clId) {
+  const checklists = state.checklists.map(cl => cl.id === clId ? { ...cl, expanded: !cl.expanded } : cl);
+  persist({ ...state, checklists });
+}
+function deleteChecklist(clId) {
+  if (!confirm("Delete this checklist and all its items?")) return;
+  persist({ ...state, checklists: state.checklists.filter(cl => cl.id !== clId) });
+}
+function resetChecklist(clId) {
+  const checklists = state.checklists.map(cl => cl.id === clId ? { ...cl, items: cl.items.map(i => ({ ...i, done: false })) } : cl);
+  persist({ ...state, checklists });
+}
+function startEditChecklistName(clId) {
+  editingChecklistId = clId; render();
+  const inp = root.querySelector(`[data-checklist-name-input="${clId}"]`);
+  if (inp) { inp.focus(); inp.select(); }
+}
+function stopEditChecklistName() { editingChecklistId = null; render(); }
+function renameChecklist(clId, value) {
+  state = { ...state, checklists: state.checklists.map(cl => cl.id === clId ? { ...cl, name: value } : cl) };
+  quietSave();
+}
+function toggleChecklistItemDone(clId, itemId) {
+  const checklists = state.checklists.map(cl => {
+    if (cl.id !== clId) return cl;
+    return { ...cl, items: cl.items.map(i => i.id === itemId ? { ...i, done: !i.done } : i) };
+  });
+  persist({ ...state, checklists });
+}
+function deleteChecklistItem(clId, itemId) {
+  const checklists = state.checklists.map(cl => cl.id === clId ? { ...cl, items: cl.items.filter(i => i.id !== itemId) } : cl);
+  persist({ ...state, checklists });
+}
+function addChecklistItem(clId) {
+  const nameInput = document.getElementById("cl-item-name-" + clId);
+  const noteInput = document.getElementById("cl-item-note-" + clId);
+  const name = nameInput.value.trim();
+  if (!name) { nameInput.focus(); return; }
+  const note = noteInput ? noteInput.value : "";
+  const item = { id: uid(), name, note, done: false };
+  const checklists = state.checklists.map(cl => cl.id === clId ? { ...cl, items: [...cl.items, item] } : cl);
+  persist({ ...state, checklists });
+}
+function startEditChecklistItem(key) {
+  window._clItemEditOpen[key] = true; render();
+  const inp = root.querySelector(`[data-cl-item-name-input="${key}"]`);
+  if (inp) { inp.focus(); inp.select(); }
+}
+function stopEditChecklistItem(key) { window._clItemEditOpen[key] = false; render(); }
+function renameChecklistItem(clId, itemId, value) {
+  state = { ...state, checklists: state.checklists.map(cl => cl.id === clId ? { ...cl, items: cl.items.map(i => i.id === itemId ? { ...i, name: value } : i) } : cl) };
+  quietSave();
+}
+function toggleChecklistItemNote(key) {
+  window._clNoteOpenState[key] = !window._clNoteOpenState[key];
+  render();
+}
+function setChecklistItemNote(clId, itemId, value) {
+  state = { ...state, checklists: state.checklists.map(cl => cl.id === clId ? { ...cl, items: cl.items.map(i => i.id === itemId ? { ...i, note: value } : i) } : cl) };
+  quietSave();
 }
 function makeRecurring(catId, itemId) {
   setItemIntervalSimple(catId, itemId, "7");
@@ -848,6 +944,69 @@ function renderItemRow(cat, item) {
   `;
 }
 
+function renderChecklistItemRow(cl, item) {
+  const key = cl.id + ":" + item.id;
+  const isEditingName = window._clItemEditOpen[key];
+  const noteOpen = window._clNoteOpenState[key];
+  const nameHtml = isEditingName
+    ? `<input class="item-name-input" value="${escapeHtml(item.name)}" data-cl-item-name-input="${key}" style="flex:1;" />`
+    : `<span class="item-name" style="${item.done ? "text-decoration:line-through;color:var(--sage-soft);" : ""}">${escapeHtml(item.name)}</span>`;
+  let noteHtml = "";
+  if (noteOpen) {
+    noteHtml = `<div class="note-box"><textarea placeholder="Any extra detail…" data-cl-item-note="${key}">${escapeHtml(item.note)}</textarea></div>`;
+  } else if (item.note) {
+    noteHtml = `<div class="sub-info">${escapeHtml(item.note)}</div>`;
+  }
+  return `
+    <div class="cl-item-row">
+      <div class="checkbox ${item.done ? "checked" : ""}" data-toggle-cl-item="${key}">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" /></svg>
+      </div>
+      <div class="cl-item-main">
+        <div class="item-name-row">
+          ${nameHtml}
+          <button class="edit-pencil" data-edit-cl-item="${key}" aria-label="Rename">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <button class="note-toggle" data-toggle-cl-note="${key}">${item.note ? "Edit note" : "Add note"}</button>
+        </div>
+        ${noteHtml}
+      </div>
+      <button class="delete-btn" data-delete-cl-item="${key}" aria-label="Delete">×</button>
+    </div>
+  `;
+}
+function renderChecklistCard(cl) {
+  const doneCount = cl.items.filter(i => i.done).length;
+  const itemsHtml = cl.items.length ? cl.items.map(it => renderChecklistItemRow(cl, it)).join("") : `<div class="empty">No items yet.</div>`;
+  const isEditingName = editingChecklistId === cl.id;
+  const titleHtml = isEditingName
+    ? `<input class="category-title-input" value="${escapeHtml(cl.name)}" data-checklist-name-input="${cl.id}" onclick="event.stopPropagation()" />`
+    : `<div class="category-title">${escapeHtml(cl.name)}</div>`;
+  return `
+    <div class="category">
+      <div class="category-head" data-toggle-checklist="${cl.id}">
+        <svg class="chevron ${cl.expanded ? "open" : ""}" width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        ${titleHtml}
+        <button class="edit-pencil" data-edit-checklist="${cl.id}" aria-label="Rename checklist" onclick="event.stopPropagation()">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <button class="cl-reset-btn" data-reset-checklist="${cl.id}">Reset (${doneCount}/${cl.items.length})</button>
+        <button class="delete-btn" data-delete-checklist="${cl.id}" aria-label="Delete checklist">×</button>
+      </div>
+      ${cl.expanded ? `
+        <div class="category-body">
+          ${itemsHtml}
+          <div class="add-item-form">
+            <div class="add-item-form-row"><input type="text" id="cl-item-name-${cl.id}" placeholder="Add an item…" /></div>
+            <div class="add-item-form-row"><textarea id="cl-item-note-${cl.id}" placeholder="Any extra detail…" style="border:1px solid var(--sage-line);border-radius:8px;padding:8px 10px;font-size:13px;background:var(--sage-bg);font-family:inherit;color:var(--sage-text);min-height:40px;resize:vertical;width:100%;box-sizing:border-box;"></textarea></div>
+            <div class="add-item-form-row"><button data-add-cl-item="${cl.id}">Add item</button></div>
+          </div>
+        </div>
+      ` : ""}
+    </div>
+  `;
+}
 function renderCategory(c) {
   const templateCount = c.items.filter(it => !(it.isOccurrence && isWeekRelevant(it))).length;
   const visibleItems = sortPendingFirst(c.items.filter(matchesFilter).filter(it => !(it.isOccurrence && isWeekRelevant(it))));
@@ -945,6 +1104,79 @@ function renderCategory(c) {
 function render(saveError) {
   if (!state) return;
 
+  const tabBarHtml = `
+    <div class="tab-bar">
+      <button class="tab-btn ${activeTab === "tasks" ? "active" : ""}" data-set-tab="tasks">Tasks</button>
+      <button class="tab-btn ${activeTab === "checklists" ? "active" : ""}" data-set-tab="checklists">Checklists</button>
+    </div>
+  `;
+
+  if (activeTab === "checklists") {
+    const clsHtml = state.checklists.length ? state.checklists.map(renderChecklistCard).join("") : `<div class="empty">No checklists yet — add one below.</div>`;
+    root.innerHTML = `
+      ${tabBarHtml}
+      <div class="header">
+        <div class="title">Checklists</div>
+      </div>
+      <div class="list" style="padding-top:4px;">${clsHtml}</div>
+      ${window._addChecklistFormOpen.open ? `
+        <div class="add-row">
+          <input id="new-checklist-input" placeholder="New checklist (e.g. Before vacation)…" />
+          <button id="add-checklist-btn">Add</button>
+          <button class="secondary-btn" id="cancel-add-checklist-btn" type="button">Cancel</button>
+        </div>
+      ` : `
+        <div style="padding: 12px 16px 20px 16px;">
+          <button class="add-task-toggle" id="open-add-checklist-btn">+ Add checklist</button>
+        </div>
+      `}
+      ${saveError ? `<div class="status">Couldn't save — check your connection and try again.</div>` : ""}
+    `;
+    root.querySelectorAll("[data-set-tab]").forEach(el => el.addEventListener("click", () => setActiveTab(el.dataset.setTab)));
+    const openAddClBtn = document.getElementById("open-add-checklist-btn");
+    if (openAddClBtn) openAddClBtn.addEventListener("click", toggleAddChecklistForm);
+    const cancelAddClBtn = document.getElementById("cancel-add-checklist-btn");
+    if (cancelAddClBtn) cancelAddClBtn.addEventListener("click", toggleAddChecklistForm);
+    const addClBtn = document.getElementById("add-checklist-btn");
+    if (addClBtn) addClBtn.addEventListener("click", addChecklist);
+    const newClInput = document.getElementById("new-checklist-input");
+    if (newClInput) newClInput.addEventListener("keydown", e => { if (e.key === "Enter") addChecklist(); });
+    root.querySelectorAll("[data-toggle-checklist]").forEach(el => el.addEventListener("click", (ev) => {
+      if (ev.target.closest("[data-delete-checklist]") || ev.target.closest("[data-edit-checklist]") || ev.target.closest("[data-reset-checklist]")) return;
+      toggleChecklistExpanded(el.dataset.toggleChecklist);
+    }));
+    root.querySelectorAll("[data-delete-checklist]").forEach(el => el.addEventListener("click", (ev) => { ev.stopPropagation(); deleteChecklist(el.dataset.deleteChecklist); }));
+    root.querySelectorAll("[data-reset-checklist]").forEach(el => el.addEventListener("click", (ev) => { ev.stopPropagation(); resetChecklist(el.dataset.resetChecklist); }));
+    root.querySelectorAll("[data-edit-checklist]").forEach(el => el.addEventListener("click", (ev) => { ev.stopPropagation(); startEditChecklistName(el.dataset.editChecklist); }));
+    root.querySelectorAll("[data-checklist-name-input]").forEach(el => {
+      el.addEventListener("input", () => renameChecklist(el.dataset.checklistNameInput, el.value));
+      el.addEventListener("keydown", (e) => { if (e.key === "Enter") stopEditChecklistName(); });
+      el.addEventListener("blur", () => stopEditChecklistName());
+    });
+    root.querySelectorAll("[data-toggle-cl-item]").forEach(el => {
+      const [clId, itemId] = el.dataset.toggleClItem.split(":");
+      el.addEventListener("click", () => toggleChecklistItemDone(clId, itemId));
+    });
+    root.querySelectorAll("[data-delete-cl-item]").forEach(el => {
+      const [clId, itemId] = el.dataset.deleteClItem.split(":");
+      el.addEventListener("click", () => deleteChecklistItem(clId, itemId));
+    });
+    root.querySelectorAll("[data-edit-cl-item]").forEach(el => el.addEventListener("click", () => startEditChecklistItem(el.dataset.editClItem)));
+    root.querySelectorAll("[data-cl-item-name-input]").forEach(el => {
+      const [clId, itemId] = el.dataset.clItemNameInput.split(":");
+      el.addEventListener("input", () => renameChecklistItem(clId, itemId, el.value));
+      el.addEventListener("keydown", (e) => { if (e.key === "Enter") stopEditChecklistItem(el.dataset.clItemNameInput); });
+      el.addEventListener("blur", () => stopEditChecklistItem(el.dataset.clItemNameInput));
+    });
+    root.querySelectorAll("[data-toggle-cl-note]").forEach(el => el.addEventListener("click", () => toggleChecklistItemNote(el.dataset.toggleClNote)));
+    root.querySelectorAll("[data-cl-item-note]").forEach(el => {
+      const [clId, itemId] = el.dataset.clItemNote.split(":");
+      el.addEventListener("input", () => setChecklistItemNote(clId, itemId, el.value));
+    });
+    root.querySelectorAll("[data-add-cl-item]").forEach(el => el.addEventListener("click", () => addChecklistItem(el.dataset.addClItem)));
+    return;
+  }
+
   const peopleHtml = state.people.map((name, i) => {
     const c = OWNER_COLORS[i % OWNER_COLORS.length];
     const active = activeFilter === i;
@@ -980,10 +1212,11 @@ function render(saveError) {
   const catsHtml = state.categories.length ? state.categories.map(renderCategory).join("") : `<div class="empty">No categories yet — add one below.</div>`;
 
   root.innerHTML = `
+    ${tabBarHtml}
     <div class="header">
       <div class="eyebrow">This week <span class="range">(${weekRangeLabel()})</span></div>
       <div class="today-date">${todayLabel()}</div>
-      <div class="title">Household Checklist</div>
+      <div class="title">Tasks</div>
     </div>
     <div class="people-row">${peopleHtml}</div>
     ${activeFilter !== null ? `<div class="filter-note">${activeFilter === 2 ? "Showing only shared (Both) tasks" : `Showing ${escapeHtml(state.people[activeFilter])}'s tasks + shared (Both) tasks`} — tap again to show everyone</div>` : ""}
@@ -1019,6 +1252,7 @@ function render(saveError) {
     ${saveError ? `<div class="status">Couldn't save — check your connection and try again.</div>` : ""}
   `;
 
+  root.querySelectorAll("[data-set-tab]").forEach(el => el.addEventListener("click", () => setActiveTab(el.dataset.setTab)));
   root.querySelectorAll("[data-toggle-filter]").forEach(el => el.addEventListener("click", () => toggleFilter(Number(el.dataset.toggleFilter))));
   root.querySelectorAll("[data-edit-person]").forEach(el => el.addEventListener("click", () => startEditPerson(Number(el.dataset.editPerson))));
   root.querySelectorAll("[data-person-index]").forEach(el => {
