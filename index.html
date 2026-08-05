@@ -170,6 +170,9 @@ const ICON_DEFS = {
   teddybear: '<circle cx="12" cy="14" r="6"/><circle cx="7" cy="7" r="2.3"/><circle cx="17" cy="7" r="2.3"/><circle cx="9.5" cy="13" r="0.8" fill="currentColor" stroke="none"/><circle cx="14.5" cy="13" r="0.8" fill="currentColor" stroke="none"/><path d="M10 16.5q2 1.5 4 0"/>',
   book: '<path d="M4 5a2 2 0 0 1 2-2h6v18H6a2 2 0 0 1-2-2z"/><path d="M12 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6"/>',
   milk: '<path d="M7 3h10l1 4H6z"/><path d="M6 7l1 13h10l1-13"/><path d="M12 3v4"/>',
+  laptop: '<rect x="4" y="4" width="16" height="11" rx="1"/><path d="M2 19l2-4h16l2 4z"/>',
+  game: '<rect x="2" y="8" width="20" height="10" rx="5"/><path d="M7 11v4"/><path d="M5 13h4"/><circle cx="16" cy="12" r="1"/><circle cx="18" cy="14" r="1"/>',
+  plug: '<path d="M9 2v6"/><path d="M15 2v6"/><path d="M6 8h12v4a6 6 0 0 1-12 0z"/><path d="M12 18v4"/>',
   default: '<circle cx="12" cy="12" r="8"/><path d="M9 12l2 2 4-4"/>',
 };
 function iconSvg(key, size) {
@@ -192,6 +195,9 @@ const ICON_KEYWORD_MAP = [
   [/plushie|stuffed animal|teddy/i, "teddybear"],
   [/\bbook(s)?\b|novel|reading/i, "book"],
   [/\bmilk\b/i, "milk"],
+  [/electronic|laptop|smartphone|\bphone\b|computer|tablet/i, "laptop"],
+  [/card game|board game|\bgame\b|videogame|console/i, "game"],
+  [/charger|charging|\bcable\b|\bplug\b/i, "plug"],
   [/grocer|shop|buy|coffee|market/i, "cart"],
   [/gift|present/i, "gift"],
   [/key|lock|door/i, "key"],
@@ -210,7 +216,7 @@ function autoDetectIcon(name) {
 function resolveIcon(item) {
   return (item.icon && ICON_DEFS[item.icon]) ? item.icon : autoDetectIcon(item.name);
 }
-const ICON_PICKER_KEYS = ["trash","droplet","leaf","shirt","broom","bed","window","dollar","coin","car","wrench","cart","gift","key","mail","home","heart","calendar","dumbbell","pills","toothbrush","teddybear","book","milk","default"];
+const ICON_PICKER_KEYS = ["trash","droplet","leaf","shirt","broom","bed","window","dollar","coin","car","wrench","cart","gift","key","mail","home","heart","calendar","dumbbell","pills","toothbrush","teddybear","book","milk","laptop","game","plug","default"];
 
 
 let state = null;
