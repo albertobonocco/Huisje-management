@@ -18,7 +18,10 @@
   .tab-btn { flex: 1; border: none; background: none; padding: 14px 8px; font-size: 14px; font-weight: 700; color: var(--sage-soft); cursor: pointer; border-bottom: 3px solid transparent; }
   .tab-btn.active { color: var(--sage); border-bottom-color: var(--sage); }
   .cl-reset-btn { border: 1px solid var(--sage-line); background: var(--sage-bg); color: var(--sage-soft); font-size: 11px; font-weight: 700; padding: 5px 10px; border-radius: 8px; cursor: pointer; flex-shrink: 0; }
-  .cl-item-row { display: flex; align-items: flex-start; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--sage-line); }
+  .cl-item-row { display: flex; align-items: flex-start; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--sage-line); background: var(--sage-card); }
+  .drag-handle { border: none; background: none; color: var(--sage-line); padding: 4px 0; cursor: grab; touch-action: none; flex-shrink: 0; display: flex; align-items: center; margin-top: 3px; }
+  .drag-handle:active { cursor: grabbing; color: var(--sage-soft); }
+  .cl-item-row.dragging-row { box-shadow: 0 4px 14px rgba(43,51,31,0.18); border-radius: 8px; position: relative; z-index: 10; opacity: 0.95; }
   .cl-item-row:last-of-type { border-bottom: none; }
   .cl-item-main { flex: 1; min-width: 0; }
   .header { padding: 24px 20px 16px 20px; text-align: center; }
@@ -436,6 +439,7 @@ function normalizeItem(raw) {
     isOccurrence: !!raw.isOccurrence,
     icon: raw.icon || null,
     weekOwnerOverride: typeof raw.weekOwnerOverride === "number" ? raw.weekOwnerOverride : null,
+    dueDateOverride: raw.dueDateOverride || null,
   };
 }
 function normalize(record) {
@@ -474,6 +478,7 @@ function allItemsFlat() {
   state.categories.forEach(c => c.items.forEach(it => out.push({
     ...it,
     assignee: it.weekOwnerOverride !== null && it.weekOwnerOverride !== undefined ? it.weekOwnerOverride : it.assignee,
+    dueDate: it.dueDateOverride || it.dueDate,
     categoryId: c.id,
     categoryName: c.name,
   })));
@@ -520,7 +525,7 @@ function toggleItem(catId, itemId) {
           const nextDate = (i.intervalDays === -1 && i.customRule)
             ? nextCustomDate(i.customRule, anchor)
             : addDays(anchor, i.intervalDays);
-          return { ...i, done: true, lastCompletedDate: todayStr(), dueDate: nextDate, weekOwnerOverride: null };
+          return { ...i, done: true, lastCompletedDate: todayStr(), dueDate: nextDate };
         }
         const prevDate = (i.intervalDays === -1 && i.customRule)
           ? prevCustomDate(i.customRule, i.dueDate)
@@ -592,6 +597,56 @@ function toggleChecklistExpanded(clId) {
 }
 function deleteChecklist(clId) {
   persist({ ...state, checklists: state.checklists.filter(cl => cl.id !== clId) });
+}
+function commitChecklistItemOrder(clId, orderedItemIds) {
+  const checklists = state.checklists.map(cl => {
+    if (cl.id !== clId) return cl;
+    const byId = {};
+    cl.items.forEach(i => { byId[i.id] = i; });
+    const reordered = orderedItemIds.map(id => byId[id]).filter(Boolean);
+    // include any items missed (safety net) at the end, in original order
+    cl.items.forEach(i => { if (!orderedItemIds.includes(i.id)) reordered.push(i); });
+    return { ...cl, items: reordered };
+  });
+  persist({ ...state, checklists });
+}
+function setupChecklistDrag() {
+  root.querySelectorAll("[data-drag-handle]").forEach(handle => {
+    handle.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      const key = handle.dataset.dragHandle;
+      const clId = key.split(":")[0];
+      const row = handle.closest(".cl-item-row");
+      const container = row.parentElement;
+      if (!row || !container) return;
+      row.classList.add("dragging-row");
+      try { handle.setPointerCapture(e.pointerId); } catch (err) {}
+
+      function onMove(ev) {
+        const y = ev.clientY;
+        const siblings = Array.from(container.querySelectorAll(".cl-item-row")).filter(r => r !== row);
+        let target = null;
+        for (const sib of siblings) {
+          const rect = sib.getBoundingClientRect();
+          if (y < rect.top + rect.height / 2) { target = sib; break; }
+        }
+        if (target) container.insertBefore(row, target);
+        else container.appendChild(row);
+      }
+      function onUp() {
+        row.classList.remove("dragging-row");
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+        const orderedIds = Array.from(container.querySelectorAll(".cl-item-row"))
+          .map(r => r.dataset.clItemRow)
+          .filter(Boolean)
+          .map(k => k.split(":")[1]);
+        commitChecklistItemOrder(clId, orderedIds);
+      }
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp, { once: true });
+    });
+  });
 }
 function resetChecklist(clId) {
   const checklists = state.checklists.map(cl => cl.id === clId ? { ...cl, items: cl.items.map(i => ({ ...i, done: false, active: true })) } : cl);
@@ -824,10 +879,14 @@ function saveTaskRowEdit(catId, itemId, key) {
       const ownerFields = newAssignee === null ? {}
         : i.intervalDays ? { weekOwnerOverride: newAssignee }
         : { assignee: newAssignee };
+      const newDate = dateInput ? (dateInput.value || null) : undefined;
+      const dateFields = newDate === undefined ? {}
+        : i.intervalDays ? { dueDateOverride: newDate }
+        : { dueDate: newDate };
       return {
         ...i,
         ...ownerFields,
-        dueDate: dateInput ? (dateInput.value || null) : i.dueDate,
+        ...dateFields,
         note: noteInput ? noteInput.value : i.note,
       };
     }) };
@@ -985,7 +1044,7 @@ function renderFlatTaskRow(it) {
         <div class="custom-panel" style="width:100%;">
           <div class="custom-panel-row">
             <select id="rowedit-owner-${key}">${ownerOptsHtml}</select>
-            ${it.intervalDays === 0 ? `<input type="date" class="custom-input" id="rowedit-date-${key}" value="${it.dueDate || ""}" />` : ""}
+            ${(!it.intervalDays || (it.intervalDays !== -1 && it.anchorMode === "floating")) ? `<input type="date" class="custom-input" id="rowedit-date-${key}" value="${it.dueDate || ""}" />` : ""}
           </div>
           <div class="note-box" style="border-top:none;padding-top:0;">
             <textarea placeholder="Any extra detail…" id="rowedit-note-${key}">${escapeHtml(it.note)}</textarea>
@@ -1134,7 +1193,7 @@ function renderChecklistItemRow(cl, item) {
   if (isEditing) {
     const draft = (window._clItemEditDraft && window._clItemEditDraft[key]) || { name: item.name, note: item.note, icon: resolveIcon(item) };
     return `
-      <div class="cl-item-row" style="display:block;">
+      <div class="cl-item-row" data-cl-item-row="${key}" style="display:block;">
         <div class="edit-panel-full">
           <input type="text" class="item-name-input" value="${escapeHtml(draft.name)}" data-cl-item-name-input="${key}" placeholder="Item name" />
           <textarea placeholder="Any extra detail…" data-cl-item-note-input="${key}" style="border:1px solid var(--sage-line);border-radius:8px;padding:8px 10px;font-size:13px;background:var(--sage-bg);font-family:inherit;color:var(--sage-text);min-height:44px;resize:vertical;">${escapeHtml(draft.note)}</textarea>
@@ -1150,7 +1209,10 @@ function renderChecklistItemRow(cl, item) {
 
   const noteHtml = item.note ? `<div class="sub-info">${escapeHtml(item.note)}</div>` : "";
   return `
-    <div class="cl-item-row" style="${!item.active ? "opacity:0.5;" : ""}">
+    <div class="cl-item-row" data-cl-item-row="${key}" style="${!item.active ? "opacity:0.5;" : ""}">
+      <button class="drag-handle" data-drag-handle="${key}" aria-label="Drag to reorder" type="button">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="6" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="15" cy="18" r="1.4"/></svg>
+      </button>
       <div class="checkbox ${item.done ? "checked" : ""}" data-toggle-cl-item="${key}">
         <svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" /></svg>
       </div>
@@ -1405,6 +1467,7 @@ function render(saveError) {
     });
     root.querySelectorAll("[data-open-add-cl-item]").forEach(el => el.addEventListener("click", () => toggleAddChecklistItemForm(el.dataset.openAddClItem)));
     root.querySelectorAll("[data-cancel-add-cl-item]").forEach(el => el.addEventListener("click", () => toggleAddChecklistItemForm(el.dataset.cancelAddClItem)));
+    setupChecklistDrag();
     return;
   }
 
@@ -1612,7 +1675,7 @@ function applyAutoDueRollover(s) {
   const categories = s.categories.map(c => ({
     ...c,
     items: c.items.map(i => (i.intervalDays && i.done && i.dueDate && i.dueDate <= today
-      ? { ...i, done: false, lastCompletedDate: null }
+      ? { ...i, done: false, lastCompletedDate: null, weekOwnerOverride: null, dueDateOverride: null }
       : i)),
   }));
   return { ...s, categories };
