@@ -1683,10 +1683,10 @@ function applyAutoWeeklyReset(s) {
   return s;
 }
 function applyAutoDueRollover(s) {
-  const today = todayStr();
+  const sunday = sundayOfThisWeek();
   const categories = s.categories.map(c => ({
     ...c,
-    items: c.items.map(i => (i.intervalDays && i.done && i.dueDate && i.dueDate <= today
+    items: c.items.map(i => (i.intervalDays && i.done && i.dueDate && i.dueDate <= sunday
       ? { ...i, done: false, lastCompletedDate: null, weekOwnerOverride: null, dueDateOverride: null }
       : i)),
   }));
