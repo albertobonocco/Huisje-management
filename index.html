@@ -132,9 +132,9 @@
 <div id="app-root"><div class="status">Loading your checklist…</div></div>
 
 <script>
-const BIN_ID = "6a4cb8fdda38895dfe398ef7";
-const MASTER_KEY = "$2a$10$JKNqBvlgG6PnN2vkia8.NuDtrPgACYy2zU.A33QrPD/xGX4sDYPZ.";
-const BIN_URL = "https://api.jsonbin.io/v3/b/" + BIN_ID;
+const DB_URL = "https://home-app-8686a-default-rtdb.europe-west1.firebasedatabase.app";
+const DATA_PATH = "hh_k7q2x9m4tv";
+const DATA_URL = DB_URL + "/" + DATA_PATH + ".json";
 const OWNER_COLORS = [
   { color: "#5B7553", bg: "#EEF1E9" },
   { color: "#B98B4E", bg: "#F7EFE1" },
@@ -400,15 +400,22 @@ function defaultState() {
 }
 
 async function loadRemote() {
-  const res = await fetch(BIN_URL + "/latest", { headers: { "X-Master-Key": MASTER_KEY } });
-  if (!res.ok) throw new Error("load failed");
+  const res = await fetch(DATA_URL, { cache: "no-store" });
+  if (!res.ok) {
+    let detail = "";
+    try { const j = await res.json(); detail = j && j.error ? j.error : ""; } catch (e) {}
+    const err = new Error("HTTP " + res.status + (detail ? " - " + detail : ""));
+    err.status = res.status;
+    throw err;
+  }
   const json = await res.json();
-  return json.record;
+  if (json === null || json === undefined) throw new Error("no data found in the database yet - run the restore step first");
+  return json;
 }
 async function saveRemote(data) {
-  const res = await fetch(BIN_URL, {
+  const res = await fetch(DATA_URL + "?print=silent", {
     method: "PUT",
-    headers: { "Content-Type": "application/json", "X-Master-Key": MASTER_KEY },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
   if (!res.ok) throw new Error("save failed");
@@ -454,34 +461,35 @@ function normalizeItem(raw) {
     dueDateOverride: raw.dueDateOverride || null,
   };
 }
+function toArr(x) {
+  if (Array.isArray(x)) return x.filter(v => v !== null && v !== undefined);
+  if (x && typeof x === "object") {
+    return Object.keys(x).sort((a, b) => Number(a) - Number(b)).map(k => x[k]).filter(v => v !== null && v !== undefined);
+  }
+  return [];
+}
 function normalize(record) {
   const base = defaultState();
   if (!record) return base;
-  const people = Array.isArray(record.people) && record.people.length ? record.people : base.people;
-  let categories = [];
-  if (Array.isArray(record.categories)) {
-    categories = record.categories.map(c => ({
+  const peopleArr = toArr(record.people);
+  const people = peopleArr.length ? peopleArr : base.people;
+  let categories;
+  if (record.categories !== undefined && record.categories !== null) {
+    categories = toArr(record.categories).map(c => ({
       id: c.id || uid(), name: c.name || "Untitled", expanded: !!c.expanded,
-      items: Array.isArray(c.items) ? c.items.map(normalizeItem) : [],
+      items: toArr(c.items).map(normalizeItem),
     }));
-  } else if (Array.isArray(record.entries)) {
-    const generalItems = record.entries.filter(e => e.kind === "task").map(e => normalizeItem({ ...e, intervalDays: 0 }));
-    const catEntries = record.entries.filter(e => e.kind === "category").map(c => ({
-      id: c.id || uid(), name: c.name, expanded: !!c.expanded, items: (c.items || []).map(normalizeItem),
-    }));
-    categories = [...catEntries];
-    if (generalItems.length) categories.push({ id: uid(), name: "General", expanded: false, items: generalItems });
-  } else if (Array.isArray(record.tasks)) {
-    categories = [{ id: uid(), name: "General", expanded: true, items: record.tasks.map(normalizeItem) }];
+  } else if (record.people || record.checklists || record.lastResetWeekStart) {
+    categories = [];
   } else {
     categories = base.categories;
   }
-  const checklists = Array.isArray(record.checklists) ? record.checklists.map(cl => ({
+  const checklists = toArr(record.checklists).map(cl => ({
     id: cl.id || uid(), name: cl.name || "Untitled", expanded: cl.expanded !== false,
-    items: Array.isArray(cl.items) ? cl.items.map(it => ({
+    items: toArr(cl.items).map(it => ({
       id: it.id || uid(), name: it.name || "Untitled", note: it.note || "", done: !!it.done, active: it.active !== false, icon: it.icon || null,
-    })) : [],
-  })) : [];
+    })),
+  }));
   return { people, lastResetWeekStart: record.lastResetWeekStart || mondayOfThisWeek(), categories, checklists };
 }
 
@@ -1714,8 +1722,9 @@ async function init() {
   try {
     record = await loadRemote();
   } catch (e) {
-    root.innerHTML = '<div class="status">Couldn\'t load your checklist — check your connection. Retrying…</div>';
-    setTimeout(init, 3000);
+    const reason = (e && e.message) ? e.message : "unknown error";
+    root.innerHTML = '<div class="status">Couldn\'t load your checklist (' + escapeHtml(reason) + '). Retrying in 20 seconds…</div>';
+    setTimeout(init, 20000);
     return;
   }
   let normalized = normalize(record);
@@ -1725,11 +1734,13 @@ async function init() {
   state = normalized;
   lastKnownTotalCategories = countCategories(normalized);
   render();
-  setInterval(async () => {
-    if (saving) return;
+  let lastPollAt = Date.now();
+  async function pollOnce() {
+    if (saving || document.hidden) return;
     const activeTag = document.activeElement && document.activeElement.tagName;
     const isTyping = root.contains(document.activeElement) && (activeTag === "INPUT" || activeTag === "SELECT" || activeTag === "TEXTAREA");
     if (isTyping || isComposingSomething()) return;
+    lastPollAt = Date.now();
     try {
       const rec = await loadRemote();
       let n = normalize(rec);
@@ -1740,7 +1751,11 @@ async function init() {
       lastKnownTotalCategories = countCategories(n);
       render();
     } catch (e) {}
-  }, 4000);
+  }
+  setInterval(pollOnce, 60000);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && Date.now() - lastPollAt > 15000) pollOnce();
+  });
 }
 function isComposingSomething() {
   if (window._addCategoryFormOpen) return true;
