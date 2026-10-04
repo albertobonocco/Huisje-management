@@ -32,6 +32,8 @@
   .cl-item-main { flex: 1; min-width: 0; }
   .header { padding: 24px 20px 16px 20px; text-align: center; }
   .eyebrow { font-size: 13px; color: var(--sage); font-weight: 500; text-transform: none; letter-spacing: normal; }
+  .eyebrow-row { display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .week-nav-btn { border: 1px solid var(--sage-line); background: var(--sage-card); color: var(--sage); border-radius: 8px; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; flex-shrink: 0; }
   .today-date { font-size: 15px; color: var(--sage); font-weight: 600; margin-top: 3px; }
   .eyebrow .range { color: var(--sage-soft); font-weight: 500; text-transform: none; letter-spacing: normal; }
   .title { font-size: 24px; font-weight: 800; letter-spacing: -0.01em; margin: 6px 0 16px 0; }
@@ -229,6 +231,8 @@ let state = null;
 let saving = false;
 let activeFilter = null;
 let activeTab = "tasks";
+let weekOffset = 0;
+const MAX_WEEK_OFFSET = 12;
 let tasksOpen = true;
 let completedOpen = true;
 let categoriesOpen = true;
@@ -299,11 +303,24 @@ function mondayOfThisWeek() {
   monday.setDate(today.getDate() + diff);
   return fmtLocal(monday);
 }
-function weekRangeLabel() {
-  const monday = mondayOfThisWeek();
+function weekRangeLabel(offset) {
+  const monday = mondayForOffset(offset || 0);
   const sunday = addDays(monday, 6);
   const fmt = s => new Date(s + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
   return fmt(monday) + " – " + fmt(sunday);
+}
+function weekWordLabel(offset) {
+  if (offset === 0) return "This week";
+  if (offset === 1) return "Next week";
+  return "In " + offset + " weeks";
+}
+function goToNextWeek() {
+  weekOffset = Math.min(MAX_WEEK_OFFSET, weekOffset + 1);
+  render();
+}
+function goToCurrentWeek() {
+  weekOffset = 0;
+  render();
 }
 function todayLabel() {
   return new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
@@ -362,11 +379,17 @@ function matchesFilter(item) {
 }
 function mondayStr() { return mondayOfThisWeek(); }
 function sundayOfThisWeek() { return addDays(mondayOfThisWeek(), 6); }
-function isWeekRelevant(item) {
-  const monday = mondayStr();
-  const sunday = sundayOfThisWeek();
-  if (!item.done) return !!item.dueDate && item.dueDate <= sunday;
+function mondayForOffset(offset) { return addDays(mondayOfThisWeek(), offset * 7); }
+function sundayForOffset(offset) { return addDays(mondayForOffset(offset), 6); }
+function isRelevantForWeekWindow(item, monday, sunday, isCurrentWeek) {
+  if (!item.done) {
+    if (!item.dueDate) return false;
+    return isCurrentWeek ? item.dueDate <= sunday : (item.dueDate >= monday && item.dueDate <= sunday);
+  }
   return !!item.lastCompletedDate && item.lastCompletedDate >= monday && item.lastCompletedDate <= sunday;
+}
+function isWeekRelevant(item) {
+  return isRelevantForWeekWindow(item, mondayStr(), sundayOfThisWeek(), true);
 }
 function sortPendingFirst(items) {
   return [...items].sort((a, b) => (isPending(a) ? 0 : 1) - (isPending(b) ? 0 : 1));
@@ -1518,7 +1541,10 @@ function render(saveError) {
     `;
   })();
 
-  const flat = allItemsFlat().filter(it => matchesFilter(it) && isWeekRelevant(it));
+  const viewMonday = mondayForOffset(weekOffset);
+  const viewSunday = sundayForOffset(weekOffset);
+  const isCurrentWeek = weekOffset === 0;
+  const flat = allItemsFlat().filter(it => matchesFilter(it) && isRelevantForWeekWindow(it, viewMonday, viewSunday, isCurrentWeek));
   const openItems = sortByDueDate(flat.filter(isPending));
   const completedItems = flat.filter(it => !isPending(it));
   const openHtml = openItems.length ? openItems.map(renderFlatTaskRow).join("") : `<div class="empty">Nothing open for this filter.</div>`;
@@ -1528,8 +1554,12 @@ function render(saveError) {
   root.innerHTML = `
     ${tabBarHtml}
     <div class="header">
-      <div class="eyebrow">This week <span class="range">(${weekRangeLabel()})</span></div>
-      <div class="today-date">${todayLabel()}</div>
+      <div class="eyebrow-row">
+        ${!isCurrentWeek ? `<button class="week-nav-btn" data-go-current-week="1" aria-label="Back to current week"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M15 6l-6 6 6 6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>` : ""}
+        <div class="eyebrow">${weekWordLabel(weekOffset)} <span class="range">(${weekRangeLabel(weekOffset)})</span></div>
+        ${weekOffset < MAX_WEEK_OFFSET ? `<button class="week-nav-btn" data-go-next-week="1" aria-label="Next week"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>` : ""}
+      </div>
+      ${isCurrentWeek ? `<div class="today-date">${todayLabel()}</div>` : ""}
       <div class="title">Tasks</div>
     </div>
     <div class="people-row">${peopleHtml}</div>
@@ -1570,6 +1600,10 @@ function render(saveError) {
 
   root.querySelectorAll("[data-set-tab]").forEach(el => el.addEventListener("click", () => setActiveTab(el.dataset.setTab)));
   root.querySelectorAll("[data-toggle-filter]").forEach(el => el.addEventListener("click", () => toggleFilter(Number(el.dataset.toggleFilter))));
+  const nextWeekBtn = root.querySelector("[data-go-next-week]");
+  if (nextWeekBtn) nextWeekBtn.addEventListener("click", goToNextWeek);
+  const currentWeekBtn = root.querySelector("[data-go-current-week]");
+  if (currentWeekBtn) currentWeekBtn.addEventListener("click", goToCurrentWeek);
   root.querySelectorAll("[data-edit-person]").forEach(el => el.addEventListener("click", () => startEditPerson(Number(el.dataset.editPerson))));
   root.querySelectorAll("[data-person-index]").forEach(el => {
     el.addEventListener("input", () => renamePerson(Number(el.dataset.personIndex), el.value));
