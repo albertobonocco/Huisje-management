@@ -67,6 +67,9 @@
   .task.done .task-text { text-decoration: line-through; color: var(--sage-soft); }
   .task-meta { display: flex; align-items: center; gap: 6px; margin-top: 4px; flex-wrap: wrap; font-size: 11px; color: var(--sage-soft); }
   .sub-info { font-size: 11px; color: var(--sage-soft); margin-top: 4px; font-family: inherit; }
+  .task.projected { border-style: dashed; background: var(--sage-bg); }
+  .task.projected .task-text { color: var(--sage-soft); }
+  .proj-circle { width: 24px; height: 24px; border-radius: 8px; border: 2px dashed var(--sage-line); flex-shrink: 0; }
   .task-date-col { margin-left: auto; padding-left: 10px; text-align: right; font-size: 11px; color: var(--sage-soft); white-space: nowrap; flex-shrink: 0; align-self: center; }
   .item-icon { color: var(--sage); flex-shrink: 0; display: flex; align-items: center; opacity: 0.85; }
   .icon-picker { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -318,8 +321,8 @@ function goToNextWeek() {
   weekOffset = Math.min(MAX_WEEK_OFFSET, weekOffset + 1);
   render();
 }
-function goToCurrentWeek() {
-  weekOffset = 0;
+function goToPrevWeek() {
+  weekOffset = Math.max(0, weekOffset - 1);
   render();
 }
 function todayLabel() {
@@ -390,6 +393,55 @@ function isRelevantForWeekWindow(item, monday, sunday, isCurrentWeek) {
 }
 function isWeekRelevant(item) {
   return isRelevantForWeekWindow(item, mondayStr(), sundayOfThisWeek(), true);
+}
+function nextOccurrenceAfter(item, dateStr) {
+  if (item.intervalDays === -1 && item.customRule) return nextCustomDate(item.customRule, dateStr);
+  return addDays(dateStr, item.intervalDays);
+}
+// Upcoming (display-only) occurrences of recurring tasks that fall inside a future week.
+// Assumes each task is completed on schedule; the first occurrence of a still-open task is the real row, not a projection.
+function projectedRowsForWindow(monday, sunday) {
+  const rows = [];
+  const today = todayStr();
+  state.categories.forEach(c => c.items.forEach(it => {
+    if (!it.intervalDays) return;
+    const base = it.dueDateOverride || it.dueDate;
+    if (!base) return;
+    let cur = base;
+    let isFirst = true;
+    let guard = 0;
+    while (cur <= sunday && guard < 800) {
+      guard++;
+      const skipRealRow = isFirst && !it.done;
+      if (!skipRealRow && cur >= monday) {
+        rows.push({ ...it, dueDate: cur, projected: true, categoryId: c.id, categoryName: c.name });
+      }
+      if (isFirst && it.anchorMode === "floating" && !it.done && cur < today) {
+        cur = nextOccurrenceAfter(it, today);
+      } else {
+        cur = nextOccurrenceAfter(it, cur);
+      }
+      isFirst = false;
+    }
+  }));
+  return rows;
+}
+function renderProjectedTaskRow(it) {
+  return `
+    <div class="task projected">
+      <div class="proj-circle" title="Upcoming - not yet checkable"></div>
+      <span class="item-icon">${iconSvg(resolveIcon(it), 17)}</span>
+      <div class="task-main">
+        <div class="task-text">${escapeHtml(it.name)}</div>
+        <div class="task-meta">
+          <span class="tag">${escapeHtml(it.categoryName)}</span>
+          ${ownerPillStatic(it.assignee)}
+        </div>
+        ${it.note ? `<div class="sub-info">${escapeHtml(it.note)}</div>` : ""}
+      </div>
+      <div class="task-date-col">Due ${niceDate(it.dueDate)}</div>
+    </div>
+  `;
 }
 function sortPendingFirst(items) {
   return [...items].sort((a, b) => (isPending(a) ? 0 : 1) - (isPending(b) ? 0 : 1));
@@ -1545,17 +1597,23 @@ function render(saveError) {
   const viewSunday = sundayForOffset(weekOffset);
   const isCurrentWeek = weekOffset === 0;
   const flat = allItemsFlat().filter(it => matchesFilter(it) && isRelevantForWeekWindow(it, viewMonday, viewSunday, isCurrentWeek));
-  const openItems = sortByDueDate(flat.filter(isPending));
+  const realOpen = flat.filter(isPending).map(it => ({ ...it, projected: false }));
+  const projectedOpen = isCurrentWeek ? [] : projectedRowsForWindow(viewMonday, viewSunday).filter(matchesFilter);
+  const openItems = sortByDueDate([...realOpen, ...projectedOpen]);
   const completedItems = flat.filter(it => !isPending(it));
-  const openHtml = openItems.length ? openItems.map(renderFlatTaskRow).join("") : `<div class="empty">Nothing open for this filter.</div>`;
+  const openHtml = openItems.length
+    ? openItems.map(it => it.projected ? renderProjectedTaskRow(it) : renderFlatTaskRow(it)).join("")
+    : `<div class="empty">Nothing ${isCurrentWeek ? "open for this filter" : "scheduled for this week"}.</div>`;
   const completedHtml = completedItems.length ? completedItems.map(renderFlatTaskRow).join("") : `<div class="empty">Nothing completed yet this week.</div>`;
+  const openSectionLabel = isCurrentWeek ? "Weekly Open Tasks" : "Due " + weekWordLabel(weekOffset).toLowerCase();
+  const showCompletedSection = isCurrentWeek || completedItems.length > 0;
   const catsHtml = state.categories.length ? state.categories.map(renderCategory).join("") : `<div class="empty">No categories yet — add one below.</div>`;
 
   root.innerHTML = `
     ${tabBarHtml}
     <div class="header">
       <div class="eyebrow-row">
-        ${!isCurrentWeek ? `<button class="week-nav-btn" data-go-current-week="1" aria-label="Back to current week"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M15 6l-6 6 6 6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>` : ""}
+        ${!isCurrentWeek ? `<button class="week-nav-btn" data-go-prev-week="1" aria-label="Previous week"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M15 6l-6 6 6 6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>` : ""}
         <div class="eyebrow">${weekWordLabel(weekOffset)} <span class="range">(${weekRangeLabel(weekOffset)})</span></div>
         ${weekOffset < MAX_WEEK_OFFSET ? `<button class="week-nav-btn" data-go-next-week="1" aria-label="Next week"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>` : ""}
       </div>
@@ -1566,16 +1624,18 @@ function render(saveError) {
     ${activeFilter !== null ? `<div class="filter-note">${activeFilter === 2 ? "Showing only shared (Both) tasks" : `Showing ${escapeHtml(state.people[activeFilter])}'s tasks + shared (Both) tasks`} — tap again to show everyone</div>` : ""}
 
     <div class="section-head" data-toggle-tasks-open="1">
-      <span class="section-label">Weekly Open Tasks</span>
+      <span class="section-label">${openSectionLabel}</span>
       <svg class="section-chevron ${tasksOpen ? "open" : ""}" width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </div>
     ${tasksOpen ? `<div class="list">${openHtml}</div>` : ""}
 
+    ${!isCurrentWeek ? `<div class="filter-note">Dashed rows are upcoming, projected from each task's schedule. They become checkable once they're due.</div>` : ""}
+    ${showCompletedSection ? `
     <div class="section-head" data-toggle-completed-open="1">
       <span class="section-label">Weekly Completed Tasks</span>
       <svg class="section-chevron ${completedOpen ? "open" : ""}" width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </div>
-    ${completedOpen ? `<div class="list">${completedHtml}</div>` : ""}
+    ${completedOpen ? `<div class="list">${completedHtml}</div>` : ""}` : ""}
 
     <div class="section-head" data-toggle-categories-open="1">
       <span class="section-label">Categories</span>
@@ -1602,8 +1662,8 @@ function render(saveError) {
   root.querySelectorAll("[data-toggle-filter]").forEach(el => el.addEventListener("click", () => toggleFilter(Number(el.dataset.toggleFilter))));
   const nextWeekBtn = root.querySelector("[data-go-next-week]");
   if (nextWeekBtn) nextWeekBtn.addEventListener("click", goToNextWeek);
-  const currentWeekBtn = root.querySelector("[data-go-current-week]");
-  if (currentWeekBtn) currentWeekBtn.addEventListener("click", goToCurrentWeek);
+  const prevWeekBtn = root.querySelector("[data-go-prev-week]");
+  if (prevWeekBtn) prevWeekBtn.addEventListener("click", goToPrevWeek);
   root.querySelectorAll("[data-edit-person]").forEach(el => el.addEventListener("click", () => startEditPerson(Number(el.dataset.editPerson))));
   root.querySelectorAll("[data-person-index]").forEach(el => {
     el.addEventListener("input", () => renamePerson(Number(el.dataset.personIndex), el.value));
